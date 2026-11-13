@@ -1,162 +1,207 @@
-import axios from 'axios'
-import type { NASAClimateData, NASAMonthlyData, DataConfidence } from '../types'
-
-const NASA_POWER_BASE = 'https://power.larc.nasa.gov/api/temporal/climatology/point'
-
-export const MODELLED_CONFIDENCE: DataConfidence = {
-  level: 'modelled',
-  label: 'Modelled (NASA POWER)',
-  description: 'Based on 20-year NASA POWER climatology reanalysis, combining satellite observations with atmospheric models. Accuracy: ±10–15% for rainfall, ±1–2°C for temperature.',
-  color: '#1976d2',
+import type { NASAClimateData, NASAMonthlyData } from '../types'
+import { DAYS, MONTHS, estimateET0, summarizeClimate } from '../lib/climate'
+const BASE = 'https://power.larc.nasa.gov/api/temporal'
+type Parameters = Record<string, Record<string, number>>
+interface PowerResponse {
+  properties?: { parameter?: Parameters }
+  header?: { start?: string; end?: string; fill_value?: number }
+  parameters?: Record<string, { units?: string }>
 }
-
-export const OBSERVED_CONFIDENCE: DataConfidence = {
-  level: 'observed',
-  label: 'Observed (Satellite + Reanalysis)',
-  description: 'NASA POWER annual data derived from satellite observations and atmospheric reanalysis models.',
-  color: '#388e3c',
+function valid(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value !== -999
 }
-
-function getETₒ(tmax: number, tmin: number, lat: number, month: number): number {
-  // Hargreaves-Samani simplified ET₀ estimate
-  const ra = getExtraterrestrialRadiation(lat, month)
-  const tmean = (tmax + tmin) / 2
-  const td = tmax - tmin
-  return 0.0023 * ra * Math.sqrt(Math.max(td, 0)) * (tmean + 17.8) * 30
-}
-
-function getExtraterrestrialRadiation(lat: number, month: number): number {
-  const latRad = (lat * Math.PI) / 180
-  const J = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349][month - 1]
-  const dr = 1 + 0.033 * Math.cos((2 * Math.PI * J) / 365)
-  const delta = 0.409 * Math.sin((2 * Math.PI * J) / 365 - 1.39)
-  const ws = Math.acos(-Math.tan(latRad) * Math.tan(delta))
-  const Gsc = 0.0820
-  return (
-    ((24 * 60) / Math.PI) *
-    Gsc *
-    dr *
-    (ws * Math.sin(latRad) * Math.sin(delta) + Math.cos(latRad) * Math.cos(delta) * Math.sin(ws))
-  )
-}
-
-function buildMonthly(raw: Record<string, number[]>, lat: number): NASAMonthlyData[] {
-  return Array.from({ length: 12 }, (_, i) => {
-    const m = i + 1
-    const tmax = raw.T2M_MAX?.[i] ?? 25
-    const tmin = raw.T2M_MIN?.[i] ?? 15
-    const tmean = raw.T2M?.[i] ?? (tmax + tmin) / 2
-    const rain = raw.PRECTOTCORR?.[i] ?? 0
-    const smRoot = raw.GWETROOT?.[i] ?? 0.5
-    const smProf = raw.GWETPROF?.[i] ?? 0.5
-    const et0 = getETₒ(tmax, tmin, lat, m)
-    return { month: m, tempMin: tmin, tempMax: tmax, tempAvg: tmean, rainfall: rain * 30, soilMoistureRoot: smRoot, soilMoistureProf: smProf, et0 }
+export function parseNASAClimate(
+  data: PowerResponse,
+  lat: number,
+  lon: number,
+  sourceUrl?: string,
+): NASAClimateData {
+  const props = data.properties?.parameter
+  if (!props) throw new Error('NASA returned no climate parameters.')
+  const get = (key: string, i: number) =>
+    props[key]?.[MONTHS[i].toUpperCase()] ?? props[key]?.[String(i + 1).padStart(2, '0')]
+  const rainUnits = data.parameters?.PRECTOTCORR?.units
+  if (rainUnits && !['mm/day', 'mm day-1', 'mm/d'].includes(rainUnits))
+    throw new Error(`Unsupported NASA precipitation units: ${rainUnits}`)
+  const monthly: NASAMonthlyData[] = MONTHS.map((_, i) => {
+    const tempMin = get('T2M_MIN', i),
+      tempMax = get('T2M_MAX', i),
+      tempAvg = get('T2M', i),
+      rain = get('PRECTOTCORR', i)
+    if (
+      ![tempMin, tempMax, tempAvg, rain].every(valid) ||
+      [tempMin, tempMax, tempAvg, rain].includes(data.header?.fill_value ?? -999)
+    )
+      throw new Error(`NASA data is incomplete for ${MONTHS[i]}. No substitute values were used.`)
+    if (
+      tempMin > tempMax ||
+      tempAvg < tempMin ||
+      tempAvg > tempMax ||
+      tempMin < -90 ||
+      tempMax > 65 ||
+      rain < 0 ||
+      rain > 1000
+    )
+      throw new Error(`NASA returned invalid values for ${MONTHS[i]}.`)
+    const moisture = (key: string) => {
+      const v = get(key, i)
+      return valid(v) && v >= 0 && v <= 1 ? v : null
+    }
+    return {
+      month: i + 1,
+      tempMin,
+      tempMax,
+      tempAvg,
+      rainfall: rain * DAYS[i],
+      soilMoistureRoot: moisture('GWETROOT'),
+      soilMoistureProf: moisture('GWETPROF'),
+      et0: estimateET0(tempMin, tempMax, lat, i + 1),
+    }
   })
+  return {
+    monthly,
+    ...summarizeClimate(monthly),
+    lat,
+    lon,
+    kind: 'live',
+    source: 'NASA POWER climatology',
+    sourceUrl,
+    retrievedAt: new Date().toISOString(),
+    period:
+      data.header?.start && data.header?.end
+        ? `${data.header.start}–${data.header.end}`
+        : 'POWER climatology (period not supplied)',
+    confidence: {
+      level: 'modelled',
+      label: 'Modelled · NASA POWER',
+      description:
+        'Gridded reanalysis incorporating observations. Climate patterns at roughly 0.5° × 0.625° meteorological resolution; not field measurements or a weather forecast.',
+      color: '#326b8a',
+    },
+  }
 }
-
-export async function fetchNASAClimateData(lat: number, lon: number): Promise<NASAClimateData> {
-  const params = {
+async function request(url: string, signal?: AbortSignal): Promise<PowerResponse> {
+  const response = await fetch(url, {
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+      : AbortSignal.timeout(30000),
+  })
+  if (!response.ok)
+    throw new Error(`NASA POWER returned HTTP ${response.status}. Please retry later.`)
+  return response.json()
+}
+export async function fetchNASAClimateData(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<NASAClimateData> {
+  const params = new URLSearchParams({
     parameters: 'T2M_MAX,T2M_MIN,T2M,PRECTOTCORR,GWETROOT,GWETPROF',
     community: 'AG',
     longitude: lon.toFixed(4),
     latitude: lat.toFixed(4),
     format: 'JSON',
-  }
-
-  const url = `${NASA_POWER_BASE}?${new URLSearchParams(params as Record<string, string>).toString()}`
-
-  try {
-    const { data } = await axios.get(url, { timeout: 30000 })
-    const props = data?.properties?.parameter as Record<string, Record<string, number>>
-    if (!props) throw new Error('No parameter data in NASA POWER response')
-
-    // NASA POWER returns keyed by "MM" strings "01".."12", with "13"=annual
-    const extract = (key: string): number[] =>
-      Array.from({ length: 12 }, (_, i) => {
-        const k = String(i + 1).padStart(2, '0')
-        return props[key]?.[k] ?? -999
-      })
-
-    const rawArrays: Record<string, number[]> = {
-      T2M_MAX: extract('T2M_MAX'),
-      T2M_MIN: extract('T2M_MIN'),
-      T2M: extract('T2M'),
-      PRECTOTCORR: extract('PRECTOTCORR'),
-      GWETROOT: extract('GWETROOT'),
-      GWETPROF: extract('GWETPROF'),
-    }
-
-    const monthly = buildMonthly(rawArrays, lat)
-    const annualRainfall = monthly.reduce((s, m) => s + m.rainfall, 0)
-    const avgTemp = monthly.reduce((s, m) => s + m.tempAvg, 0) / 12
-
-    return { monthly, annualRainfall, avgTemp, confidence: MODELLED_CONFIDENCE, source: 'NASA POWER Climatology (20-year avg)', lat, lon }
-  } catch (err) {
-    console.warn('NASA POWER API failed, using synthetic fallback:', err)
-    return generateFallback(lat, lon)
-  }
-}
-
-export function generateFallback(lat: number, lon: number): NASAClimateData {
-  // Climate-zone-aware synthetic data
-  const absLat = Math.abs(lat)
-  const isTropical = absLat < 23.5
-  const isArid = absLat > 15 && absLat < 35 && lon > 30 && lon < 70
-  const isNH = lat > 0  // Northern hemisphere
-
-  const monthly: NASAMonthlyData[] = Array.from({ length: 12 }, (_, i) => {
-    const m = i + 1
-    // Phase shift for SH
-    const phase = isNH ? m : ((m + 5) % 12) + 1
-    const seasonFactor = Math.cos(((phase - 7) * Math.PI) / 6)
-
-    let baseTemp = isTropical ? 28 : isArid ? 25 : 15
-    const tempAmplitude = isTropical ? 3 : isArid ? 12 : 10
-    const tmean = baseTemp + seasonFactor * tempAmplitude
-    const tmax = tmean + 7
-    const tmin = tmean - 7
-
-    let baseRain = isTropical ? 120 : isArid ? 15 : 60
-    const rainFactor = isTropical
-      ? 1 + 0.5 * Math.sin(((m - 6) * Math.PI) / 6)
-      : Math.max(0, 1 - seasonFactor * 0.7)
-    const rainfall = Math.max(0, baseRain * rainFactor)
-
-    const smRoot = Math.min(1, rainfall / 150)
-    const smProf = smRoot * 0.9
-    const et0 = getETₒ(tmax, tmin, lat, m)
-
-    return { month: m, tempMin: tmin, tempMax: tmax, tempAvg: tmean, rainfall, soilMoistureRoot: smRoot, soilMoistureProf: smProf, et0 }
   })
-
-  const annualRainfall = monthly.reduce((s, m) => s + m.rainfall, 0)
-  const avgTemp = monthly.reduce((s, m) => s + m.tempAvg, 0) / 12
-
+  const url = `${BASE}/climatology/point?${params}`
+  return parseNASAClimate(await request(url, signal), lat, lon, url)
+}
+// An explicit demonstration model. Never returned automatically when a live request fails.
+export function generateFallback(lat: number, lon: number): NASAClimateData {
+  const tropical = Math.abs(lat) < 23.5
+  const arid = Math.abs(lat) >= 15 && Math.abs(lat) < 35 && lon > 20 && lon < 80
+  const monthly = MONTHS.map((_, i) => {
+    const phase = lat >= 0 ? i : (i + 6) % 12
+    const season = Math.cos(((phase - 6) * Math.PI) / 6)
+    const tempAvg = (tropical ? 27 : arid ? 25 : 16) + season * (tropical ? 3 : 11)
+    const tempMin = tempAvg - 6,
+      tempMax = tempAvg + 6
+    const rainfall =
+      (arid ? 20 : tropical ? 110 : 60) * (1 + 0.5 * Math.sin(((phase - 5) * Math.PI) / 6))
+    return {
+      month: i + 1,
+      tempMin,
+      tempMax,
+      tempAvg,
+      rainfall,
+      soilMoistureRoot: Math.min(1, rainfall / 160),
+      soilMoistureProf: Math.min(1, rainfall / 180),
+      et0: estimateET0(tempMin, tempMax, lat, i + 1),
+    }
+  })
   return {
-    monthly, annualRainfall, avgTemp,
-    confidence: { level: 'estimated', label: 'Estimated (Fallback)', description: 'NASA POWER API unavailable. Using climate-zone model. Fetch real data when connected.', color: '#f57c00' },
-    source: 'Climate Zone Model (Fallback)',
-    lat, lon,
+    monthly,
+    ...summarizeClimate(monthly),
+    lat,
+    lon,
+    kind: 'demo',
+    source: 'Synthetic demonstration climate',
+    period: 'Illustrative annual cycle; no observation period',
+    confidence: {
+      level: 'estimated',
+      label: 'Estimated · demo data',
+      description:
+        'Synthetic values for exploring the interface. These are not NASA observations and must not guide planting decisions.',
+      color: '#9a682a',
+    },
   }
 }
-
-// Multi-year trend analysis
-export async function fetchNASATrendData(lat: number, lon: number, startYear: number, endYear: number): Promise<Record<number, number>> {
-  const url = `https://power.larc.nasa.gov/api/temporal/annual/point?parameters=PRECTOTCORR,T2M&community=AG&longitude=${lon.toFixed(4)}&latitude=${lat.toFixed(4)}&start=${startYear}&end=${endYear}&format=JSON`
-  try {
-    const { data } = await axios.get(url, { timeout: 30000 })
-    const props = data?.properties?.parameter as Record<string, Record<string, number>>
-    const result: Record<number, number> = {}
-    for (let y = startYear; y <= endYear; y++) {
-      result[y] = props?.PRECTOTCORR?.[String(y)] ?? 0
+export interface AnnualPoint {
+  year: number
+  rainfall: number
+  temp: number
+}
+export function parseMonthlyHistory(
+  data: PowerResponse,
+  start: number,
+  end: number,
+): AnnualPoint[] {
+  const p = data.properties?.parameter
+  if (!p) throw new Error('NASA returned no historical data.')
+  const rainUnits = data.parameters?.PRECTOTCORR?.units
+  if (rainUnits && !['mm/day', 'mm day-1', 'mm/d'].includes(rainUnits))
+    throw new Error('Unsupported historical precipitation units.')
+  return Array.from({ length: end - start + 1 }, (_, n) => {
+    const year = start + n
+    let rainfall = 0,
+      temperatureDays = 0,
+      days = 0
+    for (let month = 1; month <= 12; month++) {
+      const key = `${year}${String(month).padStart(2, '0')}`
+      const rain = p.PRECTOTCORR?.[key],
+        temp = p.T2M?.[key]
+      if (
+        !valid(rain) ||
+        rain < 0 ||
+        rain > 1000 ||
+        !valid(temp) ||
+        temp < -90 ||
+        temp > 65 ||
+        [rain, temp].includes(data.header?.fill_value ?? -999)
+      )
+        throw new Error(`Incomplete history for ${year}. Trend analysis needs complete years.`)
+      const count = new Date(Date.UTC(year, month, 0)).getUTCDate()
+      rainfall += rain * count
+      temperatureDays += temp * count
+      days += count
     }
-    return result
-  } catch {
-    // Generate synthetic trend
-    const result: Record<number, number> = {}
-    for (let y = startYear; y <= endYear; y++) {
-      result[y] = 500 + (Math.random() - 0.5) * 200 - (y - startYear) * 2
-    }
-    return result
-  }
+    return { year, rainfall, temp: temperatureDays / days }
+  })
+}
+export async function fetchNASATrendData(
+  lat: number,
+  lon: number,
+  start: number,
+  end: number,
+  signal?: AbortSignal,
+): Promise<AnnualPoint[]> {
+  const params = new URLSearchParams({
+    parameters: 'PRECTOTCORR,T2M',
+    community: 'AG',
+    longitude: lon.toFixed(4),
+    latitude: lat.toFixed(4),
+    start: String(start),
+    end: String(end),
+    format: 'JSON',
+  })
+  return parseMonthlyHistory(await request(`${BASE}/monthly/point?${params}`, signal), start, end)
 }

@@ -1,140 +1,279 @@
-import React from 'react'
-import { useAppStore } from '../store/useAppStore'
-import { DataConfidenceBadge } from './DataConfidenceBadge'
+import { ArrowRight, ArrowUpRight, Sprout, Droplets, CalendarDays } from 'lucide-react'
 import {
-  ArrowRight, CalendarDays, Droplets, Leaf, MapPin, Sprout, TestTube2, Thermometer, Wheat,
-} from 'lucide-react'
-
-export const Overview: React.FC = () => {
-  const { field, nasaData, soilData, rankedStrategies, riskCalendar, language, setActiveTab } = useAppStore()
-  const topStrategy = rankedStrategies[0]
-  const highRiskMonths = riskCalendar.filter((month) => month.severity === 'high')
-  const metricCard = 'rounded-2xl border border-[#e9dfcf] bg-white/80 p-4 shadow-sm'
-
-  const metrics = [
-    { label: 'Field size', value: field ? `${field.areaHectares.toFixed(1)} ha` : '—', detail: field ? `${field.areaAcres.toFixed(1)} acres` : 'Select a field', icon: MapPin },
-    { label: 'Annual rainfall', value: nasaData ? `${Math.round(nasaData.annualRainfall)} mm` : '—', detail: 'Yearly average', icon: Droplets },
-    { label: 'Average temperature', value: nasaData ? `${nasaData.avgTemp.toFixed(1)}°C` : '—', detail: 'Annual average', icon: Thermometer },
-    { label: 'Soil pH', value: soilData ? soilData.ph.toFixed(1) : '—', detail: soilData?.textureClass ?? 'Soil profile', icon: TestTube2 },
-    { label: 'Organic carbon', value: soilData ? `${soilData.organicCarbon.toFixed(1)} g/kg` : '—', detail: 'Topsoil estimate', icon: Leaf },
-    { label: 'Irrigation need', value: topStrategy ? `${Math.round(topStrategy.irrigationTotal)} mm` : '—', detail: 'Recommended rotation / year', icon: Droplets },
-  ]
-
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from 'recharts'
+import { useAppStore } from '../store/useAppStore'
+import { buildRiskCalendar } from '../lib/riskCalendar'
+import { MONTHS } from '../lib/climate'
+import { FieldSelector } from './FieldSelector'
+import { Metric, number, SourceNote } from './ui'
+export function Overview() {
+  const {
+    nasaData: nasa,
+    soilData: soil,
+    rankedStrategies,
+    fieldName,
+    setActiveTab,
+    language,
+  } = useAppStore()
+  const best = rankedStrategies[0],
+    risks = nasa ? buildRiskCalendar(nasa.monthly) : []
+  const chart = nasa?.monthly.map((m) => ({
+    month: MONTHS[m.month - 1],
+    rainfall: Math.round(m.rainfall),
+    temperature: Number(m.tempAvg.toFixed(1)),
+  }))
   return (
-    <div className="space-y-5">
-      <section className="rounded-3xl border border-[#e8d9c4] bg-gradient-to-br from-[#fffdf8] to-[#f4ead9] p-5 sm:p-7 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#92734d]">
-              <span className="h-2 w-2 rounded-full bg-[#78945f]" />
-              Farm snapshot
-            </p>
-            <h2 className="text-2xl font-bold tracking-tight text-[#342a20] sm:text-3xl">
-              {field ? 'Your field at a glance' : 'Welcome to SoilSight'}
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#756858]">
-              {field
-                ? `A practical overview of soil, climate, water needs and crop planning for ${field.center.lat.toFixed(3)}°, ${field.center.lng.toFixed(3)}°.`
-                : 'Choose a demo location or draw your field boundary to see local soil and climate facts.'}
-            </p>
-          </div>
-          {nasaData && <DataConfidenceBadge confidence={nasaData.confidence} inline />}
-        </div>
-      </section>
-
-      <section aria-label="Key field figures" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        {metrics.map(({ label, value, detail, icon: Icon }) => (
-          <article key={label} className={metricCard}>
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-[#f3eadc] text-[#8b6a42]">
-              <Icon className="h-4 w-4" />
-            </div>
-            <p className="text-xs font-medium text-[#847766]">{label}</p>
-            <p className="mt-1 text-xl font-bold tracking-tight text-[#342a20]">{value}</p>
-            <p className="mt-1 text-[11px] text-[#9a8d7b]">{detail}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-3">
-        <article className="rounded-2xl border border-[#e9dfcf] bg-white/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eaf0e2] text-[#5f7c48]">
-                <Sprout className="h-5 w-5" />
-              </span>
-              <div>
-                <h3 className="font-semibold text-[#342a20]">Recommended rotation</h3>
-                <p className="text-xs text-[#8a7c69]">Best match for this field</p>
-              </div>
-            </div>
-            {topStrategy && (
-              <span className="rounded-full bg-[#edf2e8] px-2.5 py-1 text-xs font-bold text-[#5f7c48]">
-                {topStrategy.scores.overall}/100
-              </span>
+    <div className="view-stack">
+      <section className="hero">
+        <div>
+          <span className="eyebrow">
+            <span className="live-dot" /> NASA DATA. LOCAL POSSIBILITIES.
+          </span>
+          <h1>
+            {language === 'ur' ? (
+              'اگلے موسم کی بہتر منصوبہ بندی۔'
+            ) : (
+              <>
+                A clearer view of
+                <br />
+                your next growing season.
+              </>
             )}
-          </div>
-          <p className="mt-4 text-lg font-bold text-[#463927]">
-            {topStrategy ? (language === 'ur' ? topStrategy.nameUrdu : topStrategy.name) : 'No recommendation yet'}
+          </h1>
+          <p>
+            {language === 'ur'
+              ? 'اپنا کھیت منتخب کریں، موسمی خطرات سمجھیں اور اپنی ترجیحات کے مطابق فصلوں کا موازنہ کریں۔'
+              : 'Understand your land. Explore the trade-offs. Build a crop plan around what matters to you.'}
           </p>
-          <p className="mt-1 text-sm leading-6 text-[#756858]">
-            {topStrategy?.crops.map((crop) => crop.crop.name).join(' → ') ?? 'Select a field to calculate suitable crop sequences.'}
-          </p>
-          <button onClick={() => setActiveTab('crops')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#7b613e] hover:text-[#5f482d]">
-            Explore crop plans <ArrowRight className="h-4 w-4" />
+          <button className="btn primary" onClick={() => setActiveTab('crops')}>
+            Explore your crop plans <ArrowUpRight size={17} />
           </button>
-        </article>
-
-        <article className="rounded-2xl border border-[#e9dfcf] bg-white/80 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f7eee0] text-[#a17942]">
-              <CalendarDays className="h-5 w-5" />
-            </span>
-            <div>
-              <h3 className="font-semibold text-[#342a20]">Seasonal risk outlook</h3>
-              <p className="text-xs text-[#8a7c69]">12-month climate calendar</p>
-            </div>
-          </div>
-          <p className="mt-4 text-sm text-[#756858]">
-            {highRiskMonths.length
-              ? <><strong className="text-[#9a563b]">{highRiskMonths.length} high-risk months</strong> need extra planning.</>
-              : 'No high-risk months identified in the current outlook.'}
-          </p>
-          <div className="mt-4 flex gap-1" aria-label="Monthly risk levels">
-            {riskCalendar.slice(0, 12).map((month) => (
-              <span
-                key={month.month}
-                title={`${month.monthName}: ${month.severity} risk`}
-                className={`h-2.5 flex-1 rounded-full ${
-                  month.severity === 'high' ? 'bg-[#c8795d]' : month.severity === 'medium' ? 'bg-[#d9ae68]' : 'bg-[#9aaf7d]'
-                }`}
+        </div>
+        <div className="hero-art" aria-hidden="true">
+          <svg viewBox="0 0 320 240" fill="none">
+            <path d="M24 180L160 244L306 164L168 100Z" fill="#ded5b9" />
+            <path d="M24 156L160 222L306 142L168 78Z" fill="#91a778" />
+            <path d="M24 133L160 198L306 119L168 54Z" fill="#577851" />
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <path
+                key={i}
+                d={`M${40 + i * 21} ${126 + i * 10}L${184 + i * 20} ${62 + i * 10}`}
+                stroke="#aac38d"
+                strokeWidth="7"
               />
             ))}
-          </div>
-          <button onClick={() => setActiveTab('risk')} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#7b613e] hover:text-[#5f482d]">
-            View risk calendar <ArrowRight className="h-4 w-4" />
-          </button>
-        </article>
-
-        <article className="rounded-2xl border border-[#e9dfcf] bg-white/80 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f3eadc] text-[#8b6a42]">
-              <Wheat className="h-5 w-5" />
-            </span>
+            <path
+              d="M168 54L306 119L160 198L24 133Z"
+              stroke="#e7edd4"
+              strokeWidth="2"
+              strokeDasharray="6 5"
+            />
+            <circle cx="168" cy="54" r="6" fill="#fff8dc" />
+            <path d="M168 54V22" stroke="#f7f4e6" strokeWidth="2" />
+            <circle cx="168" cy="18" r="7" fill="#dba95f" />
+          </svg>
+          <span>
+            FROM EARTH OBSERVATIONS
+            <br />
+            TO FIELD DECISIONS
+          </span>
+        </div>
+      </section>
+      <div className="section-label">
+        <h2>
+          {fieldName || 'Your field'} <span className="muted">/ season overview</span>
+        </h2>
+        <span className="tag">
+          {nasa?.kind === 'live'
+            ? 'NASA climate loaded'
+            : nasa?.kind === 'imported'
+              ? 'Imported inputs'
+              : nasa
+                ? 'Demo workspace'
+                : 'Awaiting data'}
+        </span>
+      </div>
+      <div className="metrics-grid">
+        <Metric
+          label="Annual rainfall"
+          value={
+            nasa ? (
+              <>
+                {number(nasa.annualRainfall)} <em>mm</em>
+              </>
+            ) : (
+              '—'
+            )
+          }
+          detail={nasa?.confidence.label ?? 'No climate loaded'}
+        />
+        <Metric
+          label="Mean temperature"
+          value={
+            nasa ? (
+              <>
+                {number(nasa.avgTemp, 1)}
+                <em>°C</em>
+              </>
+            ) : (
+              '—'
+            )
+          }
+          detail="Day-weighted annual average"
+        />
+        <Metric
+          label="Planning attention"
+          value={
+            nasa ? (
+              <>
+                {risks.filter((r) => r.severity === 'high').length}
+                <em> months</em>
+              </>
+            ) : (
+              '—'
+            )
+          }
+          detail="Estimated high climate risk · not a forecast"
+        />
+        <Metric
+          label="Topsoil pH"
+          value={soil ? soil.ph.toFixed(1) : '—'}
+          detail={soil?.confidence.label ?? 'No soil profile'}
+        />
+      </div>
+      <div className="overview-grid">
+        <FieldSelector />
+        <section className="panel seasonal-card">
+          <div className="panel-heading">
             <div>
-              <h3 className="font-semibold text-[#342a20]">Soil at a glance</h3>
-              <p className="text-xs text-[#8a7c69]">Topsoil properties</p>
+              <span className="eyebrow">02 / CLIMATE SIGNALS</span>
+              <h2>Your year, at a glance</h2>
             </div>
           </div>
-          <dl className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between gap-3"><dt className="text-[#847766]">Texture</dt><dd className="font-medium text-[#463927]">{soilData?.textureClass ?? '—'}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-[#847766]">Nitrogen</dt><dd className="font-medium text-[#463927]">{soilData ? `${soilData.nitrogen.toFixed(1)} g/kg` : '—'}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-[#847766]">CEC</dt><dd className="font-medium text-[#463927]">{soilData ? `${soilData.cec.toFixed(1)} cmol/kg` : '—'}</dd></div>
-          </dl>
-          <button onClick={() => setActiveTab('soil')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#7b613e] hover:text-[#5f482d]">
-            Soil details <ArrowRight className="h-4 w-4" />
-          </button>
-        </article>
-      </section>
+          {nasa ? (
+            <>
+              <div className="chart-legend">
+                <span>
+                  <i className="rain-dot" /> Rainfall · mm
+                </span>
+                <span>
+                  <i className="temp-dot" /> Temperature · °C
+                </span>
+              </div>
+              <div
+                className="chart"
+                role="img"
+                aria-label="Monthly rainfall and mean temperature chart"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chart} margin={{ left: -20, right: -20, top: 15 }}>
+                    <CartesianGrid vertical={false} stroke="#e9ece4" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="rain"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="temp"
+                      orientation="right"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: '#dbe3d3' }} />
+                    <Bar
+                      isAnimationActive={false}
+                      dataKey="rainfall"
+                      name="Rainfall (mm)"
+                      yAxisId="rain"
+                      fill="#adc5ad"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Line
+                      isAnimationActive={false}
+                      dataKey="temperature"
+                      name="Mean temperature (°C)"
+                      yAxisId="temp"
+                      stroke="#b57a3c"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="risk-strip">
+                {risks.map((r) => (
+                  <button
+                    key={r.month}
+                    title={`${r.monthName}: ${r.severity} attention`}
+                    onClick={() => setActiveTab('risk')}
+                  >
+                    <span>{r.monthName[0]}</span>
+                    <i className={r.severity} />
+                  </button>
+                ))}
+              </div>
+              <p className="caption inset">
+                Monthly risk signals · green low, amber medium, rust high
+              </p>
+              <SourceNote />
+              <button className="text-link inset" onClick={() => setActiveTab('nasa')}>
+                Explore climate & sources <ArrowRight size={14} />
+              </button>
+            </>
+          ) : (
+            <p className="inset muted">Load climate data to see the seasonal pattern.</p>
+          )}
+        </section>
+      </div>
+      <div className="next-grid">
+        <button className="next-card" onClick={() => setActiveTab('crops')}>
+          <Sprout size={22} />
+          <div>
+            <span className="eyebrow">YOUR BEST FIT</span>
+            <h3>{best?.crops.length ? best.name : 'Compare three approaches'}</h3>
+            <p>
+              {best?.crops.length
+                ? best.crops.map((c) => c.crop.name).join(' → ')
+                : 'Balance soil, water and your priorities.'}
+            </p>
+          </div>
+          <ArrowUpRight size={20} />
+        </button>
+        <button className="next-card" onClick={() => setActiveTab('simulator')}>
+          <Droplets size={22} />
+          <div>
+            <span className="eyebrow">WHAT IF?</span>
+            <h3>Warmer. Drier. Still prepared.</h3>
+            <p>Stress-test the same crop plans.</p>
+          </div>
+          <ArrowUpRight size={20} />
+        </button>
+        <button className="next-card" onClick={() => setActiveTab('action')}>
+          <CalendarDays size={22} />
+          <div>
+            <span className="eyebrow">YOUR NEXT STEP</span>
+            <h3>A plan you can take with you</h3>
+            <p>Seasonal actions, ready to export.</p>
+          </div>
+          <ArrowUpRight size={20} />
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,76 +1,96 @@
-import axios from 'axios'
-import type { SoilData, DataConfidence } from '../types'
-
-const SOILGRIDS_BASE = 'https://rest.soilgrids.org/soilgrids/v2.0/properties/query'
-
-function getTextureClass(clay: number, sand: number): string {
-  const silt = 100 - clay - sand
-  if (clay >= 40) return 'Clay'
-  if (clay >= 27 && sand < 20) return 'Clay'
-  if (clay >= 27 && silt >= 28) return 'Clay loam'
-  if (clay >= 20 && sand <= 45) return 'Loam'
-  if (sand >= 85) return 'Sand'
-  if (sand >= 70 && clay < 15) return 'Sandy loam'
-  if (silt >= 80) return 'Silt'
-  if (silt >= 50) return 'Silt loam'
-  return 'Sandy clay loam'
+import type { SoilData } from '../types'
+import fallback from '../data/soil-fallback.json'
+interface SoilResponse {
+  properties?: {
+    layers?: Array<{
+      name: string
+      unit_measure?: { d_factor?: number }
+      depths: Array<{ label: string; values: { mean: number | null } }>
+    }>
+  }
 }
-
-export async function fetchSoilData(lat: number, lon: number): Promise<SoilData> {
-  const properties = 'phh2o,soc,clay,sand,cec,nitrogen'
-  const url = `${SOILGRIDS_BASE}?lon=${lon.toFixed(4)}&lat=${lat.toFixed(4)}&property=${properties}&depth=0-30cm&value=mean`
-
-  try {
-    const { data } = await axios.get(url, { timeout: 20000 })
-    const layers = data?.properties?.layers as Array<{ name: string; depths: Array<{ values: { mean: number } }> }>
-    if (!layers) throw new Error('No layers in SoilGrids response')
-
-    const get = (name: string, divisor = 1): number => {
-      const layer = layers.find(l => l.name === name)
-      const val = layer?.depths?.[0]?.values?.mean
-      return val != null ? val / divisor : 0
-    }
-
-    const ph = get('phh2o', 10)
-    const soc = get('soc', 10)
-    const clay = get('clay', 10)
-    const sand = get('sand', 10)
-    const silt = Math.max(0, 100 - clay - sand)
-    const cec = get('cec', 10)
-    const nitrogen = get('nitrogen', 100)
-
-    const confidence: DataConfidence = {
+export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData {
+  const layers = data.properties?.layers
+  const get = (name: string, divisor: number) => {
+    const layer = layers?.find((l) => l.name === name)
+    const depths = [
+      { label: '0-5cm', weight: 5 },
+      { label: '5-15cm', weight: 10 },
+      { label: '15-30cm', weight: 15 },
+    ]
+    return depths.reduce((sum, d) => {
+      const value = layer?.depths.find((x) => x.label === d.label)?.values.mean
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+        throw new Error(`SoilGrids ${name} data missing for ${d.label}.`)
+      return sum + ((value / (layer?.unit_measure?.d_factor || divisor)) * d.weight) / 30
+    }, 0)
+  }
+  const ph = get('phh2o', 10),
+    organicCarbon = get('soc', 10),
+    clay = get('clay', 10),
+    sand = get('sand', 10),
+    silt = get('silt', 10)
+  // Texture means are g/kg in the API; division by 10 gives percent.
+  const texture = { clay, sand, silt }
+  if (
+    ph > 14 ||
+    Object.values(texture).some((x) => x > 100) ||
+    Math.abs(texture.clay + texture.sand + texture.silt - 100) > 5
+  )
+    throw new Error('Invalid SoilGrids soil profile.')
+  return {
+    ph,
+    organicCarbon,
+    ...texture,
+    cec: get('cec', 10),
+    nitrogen: get('nitrogen', 100),
+    textureClass:
+      texture.clay >= 40
+        ? 'Clay-rich'
+        : texture.sand >= 70
+          ? 'Sand-rich'
+          : texture.silt >= 60
+            ? 'Silt-rich'
+            : 'Mixed texture',
+    source: 'soilgrids',
+    sourceUrl,
+    confidence: {
       level: 'estimated',
-      label: 'Estimated (SoilGrids 250m)',
-      description: 'SoilGrids v2.0: machine-learning model at 250m resolution using global soil profiles. Local variation may differ significantly.',
-      color: '#7b1fa2',
-    }
-
-    return { ph, organicCarbon: soc, clay, sand, silt, cec, nitrogen, confidence, source: 'soilgrids', textureClass: getTextureClass(clay, sand) }
-  } catch (err) {
-    console.warn('SoilGrids API failed, using fallback:', err)
-    return getFallbackSoil(lat, lon)
+      label: 'Estimated · SoilGrids',
+      description:
+        '250 m global soil predictions; thickness-weighted 0–30 cm means. Local soil testing is needed.',
+      color: '#776290',
+    },
   }
 }
-
-export function getFallbackSoil(lat: number, lon: number): SoilData {
-  // Approximate by climate zone
-  const absLat = Math.abs(lat)
-  const isTropical = absLat < 15
-  const isArid = absLat >= 15 && absLat < 35
-
-  const ph = isTropical ? 5.5 : isArid ? 7.5 : 6.5
-  const soc = isTropical ? 15 : isArid ? 8 : 20
-  const clay = isTropical ? 35 : isArid ? 20 : 25
-  const sand = isTropical ? 30 : isArid ? 55 : 35
-  const silt = 100 - clay - sand
-
-  const confidence: DataConfidence = {
-    level: 'estimated',
-    label: 'Estimated (Climate Zone Model)',
-    description: 'SoilGrids API unavailable. Values estimated from climate zone. Contact a local agronomist for field measurements.',
-    color: '#f57c00',
+export async function fetchSoilData(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<SoilData> {
+  const params = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4), value: 'mean' })
+  for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
+    params.append('property', p)
+  for (const d of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', d)
+  const url = `https://rest.soilgrids.org/soilgrids/v2.0/properties/query?${params}`
+  const response = await fetch(url, {
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(20000)])
+      : AbortSignal.timeout(20000),
+  })
+  if (!response.ok) throw new Error(`SoilGrids returned HTTP ${response.status}.`)
+  return parseSoilGrids(await response.json(), url)
+}
+export function getFallbackSoil(): SoilData {
+  return {
+    ...fallback,
+    source: 'fallback',
+    confidence: {
+      level: 'estimated',
+      label: 'Estimated · example soil',
+      description:
+        'Bundled example soil profile, not a prediction for this field. Soil-based recommendations remain provisional until a soil test is available.',
+      color: '#9a682a',
+    },
   }
-
-  return { ph, organicCarbon: soc, clay, sand, silt, cec: 15, nitrogen: 1.2, confidence, source: 'fallback', textureClass: getTextureClass(clay, sand) }
 }

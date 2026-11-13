@@ -1,30 +1,29 @@
-export interface LatLng { lat: number; lng: number }
-
+export interface LatLng {
+  lat: number
+  lng: number
+}
 export interface FieldPolygon {
   coordinates: LatLng[]
   center: LatLng
   areaHectares: number
   areaAcres: number
 }
-
-export interface NASAMonthlyData {
-  month: number
-  tempMin: number
-  tempMax: number
-  tempAvg: number
-  rainfall: number
-  soilMoistureRoot: number
-  soilMoistureProf: number
-  et0: number
-}
-
 export interface DataConfidence {
   level: 'observed' | 'modelled' | 'estimated'
   label: string
   description: string
   color: string
 }
-
+export interface NASAMonthlyData {
+  month: number
+  tempMin: number
+  tempMax: number
+  tempAvg: number
+  rainfall: number
+  soilMoistureRoot: number | null
+  soilMoistureProf: number | null
+  et0: number
+}
 export interface NASAClimateData {
   monthly: NASAMonthlyData[]
   annualRainfall: number
@@ -33,8 +32,11 @@ export interface NASAClimateData {
   source: string
   lat: number
   lon: number
+  kind: 'live' | 'demo' | 'imported'
+  sourceUrl?: string
+  retrievedAt?: string
+  period: string
 }
-
 export interface SoilData {
   ph: number
   organicCarbon: number
@@ -46,10 +48,9 @@ export interface SoilData {
   confidence: DataConfidence
   source: 'soilgrids' | 'fallback'
   textureClass: string
+  sourceUrl?: string
 }
-
 export type RiskType = 'frost' | 'heat' | 'drought' | 'flood' | 'bare-field' | 'none'
-
 export interface MonthRisk {
   month: number
   monthName: string
@@ -57,7 +58,6 @@ export interface MonthRisk {
   severity: 'low' | 'medium' | 'high'
   description: string[]
 }
-
 export interface Crop {
   id: string
   name: string
@@ -87,7 +87,6 @@ export interface Crop {
   benefits: string[]
   risks: string[]
 }
-
 export interface CropSuitability {
   crop: Crop
   suitabilityScore: number
@@ -96,9 +95,7 @@ export interface CropSuitability {
   soilScore: number
   reasons: string[]
 }
-
 export type StrategyType = 'baseline' | 'soil-first' | 'water-saver'
-
 export interface RotationCrop {
   crop: Crop
   monthStart: number
@@ -106,30 +103,6 @@ export interface RotationCrop {
   suitability: number
   waterGapMm: number
 }
-
-export interface RotationStrategy {
-  type: StrategyType
-  name: string
-  nameUrdu: string
-  crops: RotationCrop[]
-  scores: {
-    overall: number
-    soilHealth: number
-    waterConservation: number
-    nitrogenFixing: number
-    marketValue: number
-    erosionControl: number
-    riskReduction: number
-  }
-  explanation: string
-  benefits: string[]
-  gaps: string[]
-  expertReviewNeeded: boolean
-  expertReviewReason: string
-  irrigationTotal: number
-  nitrogenBalance: number
-}
-
 export interface FarmerPriorities {
   waterConservation: number
   soilHealth: number
@@ -138,46 +111,21 @@ export interface FarmerPriorities {
   erosionControl: number
   riskReduction: number
 }
-
+export interface RotationStrategy {
+  type: StrategyType
+  name: string
+  nameUrdu: string
+  crops: RotationCrop[]
+  scores: FarmerPriorities & { overall: number }
+  explanation: string
+  benefits: string[]
+  gaps: string[]
+  expertReviewNeeded: boolean
+  expertReviewReason: string
+  irrigationTotal: number
+  nitrogenBalance: number
+}
 export interface ClimateScenario {
   tempDelta: number
   rainfallDelta: number
-}
-
-export interface AppState {
-  field: FieldPolygon | null
-  setField: (f: FieldPolygon | null) => void
-  nasaData: NASAClimateData | null
-  nasaLoading: boolean
-  nasaError: string | null
-  setNasaData: (d: NASAClimateData | null) => void
-  setNasaLoading: (v: boolean) => void
-  setNasaError: (e: string | null) => void
-  soilData: SoilData | null
-  soilLoading: boolean
-  soilError: string | null
-  setSoilData: (d: SoilData | null) => void
-  setSoilLoading: (v: boolean) => void
-  setSoilError: (e: string | null) => void
-  riskCalendar: MonthRisk[]
-  setRiskCalendar: (r: MonthRisk[]) => void
-  strategies: RotationStrategy[]
-  rankedStrategies: RotationStrategy[]
-  setStrategies: (s: RotationStrategy[]) => void
-  setRankedStrategies: (s: RotationStrategy[]) => void
-  priorities: FarmerPriorities
-  setPriorities: (p: FarmerPriorities) => void
-  climateScenario: ClimateScenario
-  setClimateScenario: (s: ClimateScenario) => void
-  stressedStrategies: RotationStrategy[]
-  setStressedStrategies: (s: RotationStrategy[]) => void
-  activeTab: string
-  setActiveTab: (t: string) => void
-  language: 'en' | 'ur'
-  setLanguage: (l: 'en' | 'ur') => void
-  dataLoaded: boolean
-  setDataLoaded: (v: boolean) => void
-  recalculateAll: (nasa: NASAClimateData, soil: SoilData | null) => void
-  updatePriorities: (p: FarmerPriorities) => void
-  updateClimateScenario: (s: ClimateScenario) => void
 }
