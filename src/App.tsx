@@ -1,256 +1,399 @@
-import React, { useEffect, useState } from 'react'
-import { useAppStore } from './store/useAppStore'
-import { Header } from './components/Header'
-import { FieldSelector } from './components/FieldSelector'
-import { DEMO_LOCATIONS } from './lib/demoLocations'
-import { Overview } from './components/Overview'
-import { NASADashboard } from './components/NASADashboard'
-import { RiskCalendar } from './components/RiskCalendar'
-import { CropPlanner } from './components/CropPlanner'
-import { ScoringEngine } from './components/ScoringEngine'
-import { ClimateSimulator } from './components/ClimateSimulator'
-import { IrrigationPlanner } from './components/IrrigationPlanner'
-import { SoilHealthAdvisor } from './components/SoilHealthAdvisor'
-import { ActionPlan } from './components/ActionPlan'
-import { HistoricalTrends } from './components/HistoricalTrends'
-import { GeminiAssistant } from './components/GeminiAssistant'
-import { generateFallback } from './api/nasa-power'
-import { getFallbackSoil } from './api/soilgrids'
+import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  Satellite, ShieldCheck, Database,
-  ExternalLink, FileSpreadsheet, CheckCircle2, X
+  Sprout,
+  LayoutDashboard,
+  Satellite,
+  CalendarDays,
+  SlidersHorizontal,
+  Leaf,
+  ClipboardList,
+  TrendingUp,
+  MessageCircle,
+  BookOpen,
+  Upload,
+  Volume2,
+  VolumeX,
+  X,
+  Info,
+  ArrowUpRight,
 } from 'lucide-react'
-
-export const App: React.FC = () => {
+import { useAppStore } from './store/useAppStore'
+import { Overview } from './components/Overview'
+import { parseClimateImport } from './lib/importData'
+import { generateFallback } from './api/nasa-power'
+const CropPlanner = lazy(() =>
+  import('./components/PlanViews').then((m) => ({ default: m.CropPlanner })),
+)
+const ClimateSimulator = lazy(() =>
+  import('./components/PlanViews').then((m) => ({ default: m.ClimateSimulator })),
+)
+const ActionPlan = lazy(() =>
+  import('./components/PlanViews').then((m) => ({ default: m.ActionPlan })),
+)
+const NASADashboard = lazy(() =>
+  import('./components/ScienceViews').then((m) => ({ default: m.NASADashboard })),
+)
+const RiskCalendar = lazy(() =>
+  import('./components/ScienceViews').then((m) => ({ default: m.RiskCalendar })),
+)
+const SoilHealthAdvisor = lazy(() =>
+  import('./components/ScienceViews').then((m) => ({ default: m.SoilHealthAdvisor })),
+)
+const HistoricalTrends = lazy(() =>
+  import('./components/ScienceViews').then((m) => ({ default: m.HistoricalTrends })),
+)
+const Methodology = lazy(() =>
+  import('./components/ScienceViews').then((m) => ({ default: m.Methodology })),
+)
+const Advisor = lazy(() => import('./components/Advisor').then((m) => ({ default: m.Advisor })))
+const navigation = [
+  { id: 'overview', en: 'Field overview', ur: 'کھیت کا جائزہ', icon: LayoutDashboard },
+  { id: 'crops', en: 'Crop planner', ur: 'فصلوں کی منصوبہ بندی', icon: Sprout },
+  { id: 'nasa', en: 'NASA climate', ur: 'ناسا موسمی ڈیٹا', icon: Satellite },
+  { id: 'risk', en: 'Risk calendar', ur: 'خطرے کا کیلنڈر', icon: CalendarDays },
+  { id: 'simulator', en: 'Climate simulator', ur: 'موسمی تبدیلی', icon: SlidersHorizontal },
+  { id: 'soil', en: 'Soil health', ur: 'مٹی کی صحت', icon: Leaf },
+  { id: 'action', en: 'Action plan', ur: 'عملی منصوبہ', icon: ClipboardList },
+  { id: 'trends', en: 'Historical trends', ur: 'تاریخی رجحانات', icon: TrendingUp },
+  { id: 'advisor', en: 'Field advisor', ur: 'کھیت کا مشیر', icon: MessageCircle },
+  { id: 'methodology', en: 'Sources & methods', ur: 'ذرائع اور طریقہ کار', icon: BookOpen },
+]
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
+  state = { error: false }
+  static getDerivedStateFromError() {
+    return { error: true }
+  }
+  render() {
+    return this.state.error ? (
+      <div className="panel empty-state" role="alert">
+        <h2>This view could not load.</h2>
+        <p>
+          Your repository and downloaded plans are unaffected. Reload to restore the demo workspace.
+        </p>
+        <button className="btn primary" onClick={() => window.location.reload()}>
+          Reload dashboard
+        </button>
+      </div>
+    ) : (
+      this.props.children
+    )
+  }
+}
+function ImportDialog({ onClose }: { onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null),
+    [error, setError] = useState('')
+  useEffect(() => {
+    dialog.current?.showModal()
+  }, [])
+  const example = () => {
+    const field = useAppStore.getState().field
+    if (!field) return
+    const data = generateFallback(field.center.lat, field.center.lng)
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+    )
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'soilsight-demo-climate.json'
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  return (
+    <dialog
+      ref={dialog}
+      onCancel={onClose}
+      onClick={(e) => {
+        if (e.target === dialog.current) onClose()
+      }}
+    >
+      <div className="dialog-heading">
+        <div>
+          <span className="eyebrow">BRING YOUR OWN INPUTS</span>
+          <h2>Import monthly climate</h2>
+        </div>
+        <button className="icon-btn" aria-label="Close import dialog" onClick={onClose}>
+          <X size={20} />
+        </button>
+      </div>
+      <p>
+        Import 12 monthly records as JSON or CSV. Required columns:{' '}
+        <code>month, tempMin, tempMax, tempAvg, rainfall</code>. Temperatures are °C and rainfall is
+        the monthly total in mm. Optional wetness indices are 0–1.
+      </p>
+      <p className="caption">
+        This is SoilSight’s normalized format, not a raw NASA CSV. Imports remain labelled as
+        unverified estimates. A selected field is required.
+      </p>
+      <button className="text-link" onClick={example}>
+        Download an example JSON
+      </button>
+      <label className="upload-zone">
+        <Upload size={26} />
+        <strong>Choose a CSV or JSON file</strong>
+        <span>Maximum 1 MB · exactly one record per month</span>
+        <input
+          type="file"
+          aria-label="Climate dataset file"
+          accept=".csv,.json"
+          onChange={async (e) => {
+            setError('')
+            const file = e.target.files?.[0],
+              field = useAppStore.getState().field
+            if (!file) return
+            try {
+              if (!field) throw new Error('Select a field before importing data.')
+              if (file.size > 1000000) throw new Error('Choose a file smaller than 1 MB.')
+              const text = await file.text()
+              if (useAppStore.getState().field !== field)
+                throw new Error('The field changed. Select the file again.')
+              useAppStore.getState().importData(parseClimateImport(text, file.name, field.center))
+              onClose()
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Unable to read this file.')
+            }
+            e.target.value = ''
+          }}
+        />
+      </label>
+      {error && (
+        <p className="notice warning" role="alert">
+          {error}
+        </p>
+      )}
+    </dialog>
+  )
+}
+export default function App() {
   const {
     activeTab,
-    setField,
-    recalculateAll,
+    setActiveTab,
+    language,
+    setLanguage,
+    nasaData: nasa,
+    error,
+    soilError,
     field,
-    dataLoaded,
+    loading,
   } = useAppStore()
-
-  const [showUploadModal, setShowUploadModal] = useState(false)
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
-
-  // Initialize with robust dummy / benchmark data on first mount so the dashboard is NEVER blank!
+  const [importOpen, setImportOpen] = useState(false),
+    [speaking, setSpeaking] = useState(false),
+    [voiceMessage, setVoiceMessage] = useState('')
+  useEffect(
+    () => () => {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+    },
+    [],
+  )
   useEffect(() => {
-    if (!dataLoaded) {
-      const defaultLoc = DEMO_LOCATIONS[0] // Punjab, Pakistan
-      const delta = 0.0035
-      const mockPolygon = {
-        coordinates: [
-          { lat: defaultLoc.lat - delta, lng: defaultLoc.lon - delta },
-          { lat: defaultLoc.lat - delta, lng: defaultLoc.lon + delta },
-          { lat: defaultLoc.lat + delta, lng: defaultLoc.lon + delta },
-          { lat: defaultLoc.lat + delta, lng: defaultLoc.lon - delta },
-        ],
-        center: { lat: defaultLoc.lat, lng: defaultLoc.lon },
-        areaHectares: 24.5,
-        areaAcres: 60.5,
-      }
-      setField(mockPolygon)
-
-      const initialNasa = generateFallback(defaultLoc.lat, defaultLoc.lon)
-      const initialSoil = getFallbackSoil(defaultLoc.lat, defaultLoc.lon)
-      recalculateAll(initialNasa, initialSoil)
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+    setSpeaking(false)
+  }, [language])
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    document.title = `${navigation.find((n) => n.id === activeTab)?.en ?? 'Workspace'} — SoilSight`
+  }, [activeTab])
+  const readAloud = () => {
+    if (!('speechSynthesis' in window)) {
+      setVoiceMessage('Read-aloud is not supported in this browser.')
+      return
     }
-  }, [dataLoaded, recalculateAll, setField])
-
-  // Custom dataset upload (CSV or JSON) when NASA team provides data
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      try {
-        const text = event.target?.result as string
-        if (file.name.endsWith('.json')) {
-          const parsed = JSON.parse(text)
-          if (parsed.monthly) {
-            recalculateAll(parsed, getFallbackSoil(field?.center.lat ?? 30, field?.center.lng ?? 71))
-            setUploadSuccess(`Successfully loaded NASA JSON dataset (${parsed.source || file.name})`)
-          }
-        } else {
-          // Parse CSV
-          const lines = text.trim().split('\n')
-          const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
-          const monthly = []
-          for (let i = 1; i <= Math.min(12, lines.length - 1); i++) {
-            const vals = lines[i].split(',').map(v => parseFloat(v.trim()))
-            monthly.push({
-              month: i,
-              tempMin: vals[headers.indexOf('tmin')] ?? (15 + i),
-              tempMax: vals[headers.indexOf('tmax')] ?? (28 + i),
-              tempAvg: vals[headers.indexOf('tavg')] ?? (22 + i),
-              rainfall: vals[headers.indexOf('rain')] ?? (20 + (i * 8)),
-              soilMoistureRoot: vals[headers.indexOf('soilroot')] ?? 0.45,
-              soilMoistureProf: vals[headers.indexOf('soilprof')] ?? 0.50,
-              et0: vals[headers.indexOf('et0')] ?? 90,
-            })
-          }
-          const annualRainfall = monthly.reduce((s, m) => s + m.rainfall, 0)
-          const avgTemp = monthly.reduce((s, m) => s + m.tempAvg, 0) / 12
-
-          recalculateAll(
-            {
-              monthly,
-              annualRainfall,
-              avgTemp,
-              confidence: {
-                level: 'observed',
-                label: 'NASA Challenge Dataset',
-                description: `Imported directly from official challenge file: ${file.name}`,
-                color: '#10b981'
-              },
-              source: `NASA Space Apps Dataset (${file.name})`,
-              lat: field?.center.lat ?? 30.15,
-              lon: field?.center.lng ?? 71.52,
-            },
-            getFallbackSoil(field?.center.lat ?? 30, field?.center.lng ?? 71)
-          )
-          setUploadSuccess(`Successfully loaded official NASA challenge CSV: ${file.name}`)
-        }
-      } catch (err) {
-        alert('Could not parse file. Using standard NASA benchmark format.')
-        console.error(err)
-      }
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
     }
-    reader.readAsText(file)
+    const voices = window.speechSynthesis.getVoices(),
+      voice = voices.find((v) => v.lang.startsWith(language))
+    if (!voice) {
+      setVoiceMessage(
+        `No ${language === 'ur' ? 'Urdu' : 'English'} voice is available on this device. The text remains available.`,
+      )
+      return
+    }
+    const best = useAppStore.getState().rankedStrategies[0]
+    const text =
+      language === 'ur'
+        ? `یہ ابتدائی منصوبہ ہے۔ ${nasa?.kind === 'demo' ? 'یہ مثالی ڈیٹا ہے، ناسا کا حقیقی ڈیٹا نہیں۔' : ''} سالانہ بارش ${Math.round(nasa?.annualRainfall ?? 0)} ملی میٹر ہے۔ ${best?.nameUrdu ?? ''} کے لیے پانی کی اندازاً کمی ${Math.round(best?.irrigationTotal ?? 0)} ملی میٹر ہے۔ مقامی ماہر سے تصدیق کریں۔`
+        : `${nasa?.confidence.label ?? 'No data loaded'}. Annual rainfall is ${Math.round(nasa?.annualRainfall ?? 0)} millimetres. ${best?.explanation ?? 'Choose a field and load climate data.'} Review this preliminary plan with a local agronomist.`
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.voice = voice
+    utterance.lang = voice.lang
+    utterance.onend = () => setSpeaking(false)
+    utterance.onerror = () => {
+      setSpeaking(false)
+      setVoiceMessage('Read-aloud could not complete on this device.')
+    }
+    setVoiceMessage('')
+    setSpeaking(true)
+    window.speechSynthesis.speak(utterance)
   }
-
+  const view = {
+    overview: <Overview />,
+    crops: <CropPlanner />,
+    nasa: <NASADashboard />,
+    risk: <RiskCalendar />,
+    simulator: <ClimateSimulator />,
+    soil: <SoilHealthAdvisor />,
+    action: <ActionPlan />,
+    trends: <HistoricalTrends />,
+    advisor: <Advisor key={`${nasa?.lat}-${nasa?.lon}-${nasa?.kind}`} />,
+    methodology: <Methodology />,
+  }[activeTab] ?? <Overview />
   return (
-    <div className="min-h-screen bg-[#f8f5ef] flex flex-col text-[#342a20] font-sans">
-      <Header />
-
-      {/* Main Content Workspace */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 space-y-8 w-full md:ml-64 md:w-[calc(100%-16rem)]">
-        {activeTab === 'overview' && (
-          <section aria-label="Dashboard Workspace" className="transition-all">
-            <Overview />
-          </section>
-        )}
-
-        <section aria-label="Field Boundary Map">
-          <FieldSelector onImportDataset={() => setShowUploadModal(true)} />
-        </section>
-
-        {activeTab !== 'overview' && (
-          <section aria-label="Dashboard Workspace" className="transition-all">
-            {activeTab === 'crops' && <CropPlanner />}
-            {activeTab === 'scoring' && <ScoringEngine />}
-            {activeTab === 'risk' && <RiskCalendar />}
-            {activeTab === 'simulator' && <ClimateSimulator />}
-            {activeTab === 'irrigation' && <IrrigationPlanner />}
-            {activeTab === 'nasa' && <NASADashboard />}
-            {activeTab === 'soil' && <SoilHealthAdvisor />}
-            {activeTab === 'action' && <ActionPlan />}
-            {activeTab === 'trends' && <HistoricalTrends />}
-            {activeTab === 'assistant' && <GeminiAssistant />}
-          </section>
-        )}
-      </main>
-
-      {/* Dataset Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="rounded-2xl bg-[#fffdf8] text-[#342a20] max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-[#e7ddcd] space-y-5">
-            <div className="flex items-center justify-between border-b border-[#e7ddcd] pb-3">
-              <div className="flex items-center gap-2.5">
-                <Database className="w-5 h-5 text-[#8b6a42]" />
-                <h3 className="text-base font-bold text-[#342a20]">
-                  Import field data
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowUploadModal(false)}
-                className="text-[#847766] hover:text-[#342a20] p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-sm text-[#756858] leading-relaxed">
-              Upload a NASA or local <strong>CSV</strong> or <strong>JSON</strong> dataset. SoilSight will update the climate summary and crop recommendations.
-            </p>
-
-            {/* Dropzone */}
-            <label className="border-2 border-dashed border-[#cbb99b] hover:border-[#92734d] rounded-2xl p-6 flex flex-col items-center justify-center gap-2.5 bg-[#f8f3e9] hover:bg-[#f3eadc] cursor-pointer transition-all text-center">
-              <FileSpreadsheet className="w-10 h-10 text-[#8b6a42]" />
-              <span className="text-sm font-bold text-[#463927]">
-                Choose a dataset file
-              </span>
-              <span className="text-xs text-[#847766]">
-                CSV or JSON files
-              </span>
-              <input
-                type="file"
-                accept=".csv,.json"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
-
-            {uploadSuccess && (
-              <div className="p-3.5 bg-[#edf2e8] rounded-xl border border-[#d6e0cb] text-xs text-[#526c3c] flex items-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{uploadSuccess}</span>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#e7ddcd]">
-              <button
-                onClick={() => setShowUploadModal(false)}
-                className="px-4 py-2 rounded-xl bg-[#806444] text-white font-bold text-xs shadow-sm hover:bg-[#6e5538]"
-              >
-                Close & View Telemetry
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Aerospace Footer */}
-      <footer className="bg-[#f1e9dc] border-t border-[#e7ddcd] text-[#756858] text-xs py-6 mt-10 md:ml-64">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-6">
-          <div className="space-y-1.5 max-w-xl">
-            <div className="flex items-center gap-2 text-[#463927] font-bold text-sm">
-              <Satellite className="w-4 h-4 text-[#8b6a42]" />
-              <span>NST SoilSight — Adapting Farms with NASA Earth Observations</span>
-            </div>
-            <p className="text-[11px] text-[#756858] leading-relaxed font-sans">
-              Developed for the <strong>NASA International Space Apps Challenge 2026</strong>.
-              Uses NASA POWER Climatology, NASA GIBS imagery, and ISRIC SoilGrids.
-              Designed as an assistive decision-support platform to complement local agricultural expertise.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
-            <span className="flex items-center gap-1.5 text-[#5f7047]">
-              <ShieldCheck className="w-4 h-4" />
-              <span>Observed • Modelled • Estimated Verified</span>
+    <div className="app">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <aside className="sidebar">
+        <button
+          className="brand"
+          onClick={() => setActiveTab('overview')}
+          aria-label="SoilSight home"
+        >
+          <span className="brand-icon">
+            <Sprout size={26} />
+          </span>
+          <span>
+            SoilSight<small>EARTH DATA. FARM WISDOM.</small>
+          </span>
+        </button>
+        <span className="sidebar-label">YOUR FARM WORKSPACE</span>
+        <nav aria-label="Main navigation">
+          {navigation.map(({ id, en, ur, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              aria-current={activeTab === id ? 'page' : undefined}
+            >
+              <Icon size={18} />
+              <span>{language === 'ur' ? ur : en}</span>
+              {activeTab === id && <i />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="challenge-card">
+            <Satellite size={22} />
+            <span>
+              Built for better
+              <br />
+              <strong>seasons on Earth.</strong>
             </span>
-            <a
-              href="https://power.larc.nasa.gov/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#806444] hover:text-[#5f482d] flex items-center gap-1 transition-colors"
-            >
-              NASA POWER <ExternalLink className="w-3 h-3" />
-            </a>
-            <a
-              href="https://www.spaceappschallenge.org/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#806444] hover:text-[#5f482d] flex items-center gap-1 transition-colors"
-            >
-              Space Apps 2026 <ExternalLink className="w-3 h-3" />
+            <p>
+              NASA Space Apps
+              <br />
+              Challenge prototype · 2026
+            </p>
+            <a href="https://www.spaceappschallenge.org/" target="_blank" rel="noreferrer">
+              Explore the challenge <ArrowUpRight size={13} />
             </a>
           </div>
+          <div className="sidebar-foot">
+            <span className="live-dot" /> Explainable by design
+          </div>
         </div>
-      </footer>
+      </aside>
+      <div className="workspace">
+        <header className="topbar">
+          <div className="breadcrumb">
+            Workspace <span>/</span>
+            <strong>{navigation.find((n) => n.id === activeTab)?.[language] ?? 'Overview'}</strong>
+          </div>
+          <div className="topbar-tools">
+            <div className="segmented language" aria-label="Interface language">
+              <button aria-pressed={language === 'en'} onClick={() => setLanguage('en')}>
+                EN
+              </button>
+              <button aria-pressed={language === 'ur'} onClick={() => setLanguage('ur')}>
+                اردو
+              </button>
+            </div>
+            <button
+              className="icon-btn"
+              aria-label={speaking ? 'Stop reading' : 'Read summary aloud'}
+              onClick={readAloud}
+            >
+              {speaking ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
+            <button
+              className="btn small import-button"
+              disabled={!field}
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload size={14} />
+              <span>Import data</span>
+            </button>
+            <span className="avatar" aria-hidden="true">
+              <Leaf size={17} />
+            </span>
+          </div>
+        </header>
+        <main id="main-content" tabIndex={-1}>
+          {nasa?.kind !== 'live' && nasa && (
+            <div className="data-banner">
+              <Info size={16} />
+              <span>
+                <strong>{nasa.kind === 'demo' ? 'Demo mode' : 'Imported data'}.</strong>{' '}
+                {nasa.kind === 'demo'
+                  ? 'Climate and soil values are illustrative estimates. Load NASA data for a real climate baseline.'
+                  : 'User-supplied climate inputs. Provenance has not been verified.'}
+              </span>
+              <button onClick={() => setActiveTab('methodology')}>
+                About the data <ArrowUpRight size={13} />
+              </button>
+            </div>
+          )}
+          {loading && (
+            <p className="notice" role="status">
+              Loading climate and soil at your field’s centre…
+            </p>
+          )}
+          {error && (
+            <div className="notice warning" role="alert">
+              {error}
+            </div>
+          )}
+          {soilError && (
+            <div className="notice warning" role="status">
+              {soilError}
+            </div>
+          )}
+          {voiceMessage && (
+            <p className="notice" role="status">
+              {voiceMessage}
+            </p>
+          )}
+          {language === 'ur' && (
+            <p className="caption language-note" lang="ur">
+              اہم مینو اور فصلوں کی وضاحت اردو میں ہے۔ تکنیکی جدول اور تفصیلی طریقہ کار فی الحال
+              انگریزی میں ہیں۔ آواز کی دستیابی آپ کے آلے پر منحصر ہے۔
+            </p>
+          )}
+          <ErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="panel empty-state" role="status">
+                  Loading workspace…
+                </div>
+              }
+            >
+              {view}
+            </Suspense>
+          </ErrorBoundary>
+          <footer>
+            <span>
+              <Sprout size={14} /> SoilSight · Thoughtful farming starts with context.
+            </span>
+            <button onClick={() => setActiveTab('methodology')}>
+              Sources, assumptions & limitations <ArrowRightIcon />
+            </button>
+          </footer>
+        </main>
+      </div>
+      {importOpen && <ImportDialog onClose={() => setImportOpen(false)} />}
     </div>
   )
 }
-export default App
+function ArrowRightIcon() {
+  return <ArrowUpRight size={13} />
+}

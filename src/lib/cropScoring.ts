@@ -1,263 +1,266 @@
 import type {
-  Crop, NASAClimateData, SoilData, CropSuitability,
-  RotationStrategy, RotationCrop, FarmerPriorities, NASAMonthlyData, ClimateScenario
+  Crop,
+  NASAClimateData,
+  SoilData,
+  CropSuitability,
+  RotationStrategy,
+  RotationCrop,
+  FarmerPriorities,
+  ClimateScenario,
+  StrategyType,
 } from '../types'
 import { CROPS } from './cropDatabase'
-
-// ── Suitability Scoring ──
-
-function scoreTempSuitability(crop: Crop, avgTemp: number, minMonthTemp: number, maxMonthTemp: number): number {
-  // Check absolute limits first
-  if (minMonthTemp < crop.tempMin || maxMonthTemp > crop.tempMax) return 20
-  const [optLow, optHigh] = crop.tempOptimal
-  if (avgTemp >= optLow && avgTemp <= optHigh) return 100
-  const distFromOpt = avgTemp < optLow ? optLow - avgTemp : avgTemp - optHigh
-  const range = crop.tempMax - crop.tempMin
-  return Math.max(20, 100 - (distFromOpt / range) * 120)
-}
-
-function scoreRainfallSuitability(crop: Crop, annualRainfall: number): number {
-  const need = crop.rainfallNeeded
-  if (crop.id === 'fallow') return 100
-  if (annualRainfall >= need * 0.7 && annualRainfall <= need * 2.5) {
-    // Sweet spot
-    const ratio = annualRainfall / need
-    return ratio >= 1 && ratio <= 1.5 ? 100 : 100 - Math.abs(ratio - 1.25) * 40
+import { clamp, monthRange, stressClimate, MONTHS } from './climate'
+import { buildIrrigationPlan, totalIrrigationNeed } from './irrigationPlanner'
+export const PRIORITY_KEYS: (keyof FarmerPriorities)[] = [
+  'waterConservation',
+  'soilHealth',
+  'marketValue',
+  'nitrogenFixing',
+  'erosionControl',
+  'riskReduction',
+]
+const round = (v: number) => Math.round(v * 10) / 10
+function windowSuitability(
+  crop: Crop,
+  nasa: NASAClimateData,
+  soil: SoilData | null,
+  start: number,
+  end: number,
+): CropSuitability {
+  const months = nasa.monthly.filter((m) => monthRange(start, end).includes(m.month))
+  const tempScore =
+    months.reduce((s, m) => {
+      if (m.tempAvg < crop.tempMin || m.tempAvg > crop.tempMax) return s
+      const distance = Math.max(crop.tempOptimal[0] - m.tempAvg, m.tempAvg - crop.tempOptimal[1], 0)
+      const extremes = Math.max(crop.tempMin - m.tempMin, m.tempMax - crop.tempMax, 0)
+      return s + clamp(100 - distance * 6 - extremes * 7)
+    }, 0) / months.length
+  const plan = buildIrrigationPlan(nasa.monthly, [
+    { crop, monthStart: start, monthEnd: end, suitability: 0, waterGapMm: 0 },
+  ])
+  const need = plan.reduce((s, m) => s + m.cropWaterNeed, 0)
+  const gap = totalIrrigationNeed(plan)
+  const rainfallScore = clamp(100 * (1 - gap / Math.max(1, need)))
+  const soilScore =
+    soil?.source === 'soilgrids'
+      ? clamp(100 - Math.max(crop.soilPh[0] - soil.ph, soil.ph - crop.soilPh[1], 0) * 35)
+      : 60
+  const suitabilityScore = clamp(tempScore * 0.6 + rainfallScore * 0.25 + soilScore * 0.15)
+  return {
+    crop,
+    tempScore,
+    rainfallScore,
+    soilScore,
+    suitabilityScore,
+    reasons: [
+      `${MONTHS[start - 1]}–${MONTHS[end - 1]} temperature fit ${round(tempScore)}/100.`,
+      `Estimated supplemental water gap: ${Math.round(gap)} mm.`,
+      soil?.source !== 'soilgrids'
+        ? 'Soil suitability uses a neutral score until a field profile is available.'
+        : `Soil pH ${soil.ph.toFixed(1)} compared with ${crop.soilPh.join('–')}.`,
+    ],
   }
-  if (annualRainfall < need * 0.5) {
-    // Can partially compensate with drought tolerance
-    const deficit = (need - annualRainfall) / need
-    return Math.max(10, 60 - deficit * 100 + crop.droughtTolerance * 40)
+}
+export function scoreCropSuitability(
+  crop: Crop,
+  nasa: NASAClimateData,
+  soil: SoilData | null,
+): CropSuitability {
+  return windows(crop)
+    .map(([s, e]) => windowSuitability(crop, nasa, soil, s, e))
+    .sort((a, b) => b.suitabilityScore - a.suitabilityScore)[0]
+}
+function windows(crop: Crop): [number, number][] {
+  const duration = Math.min(12, Math.ceil((crop.growingDays[0] + crop.growingDays[1]) / 2 / 30.4))
+  return Array.from({ length: 12 }, (_, i) => [i + 1, ((i + duration - 1) % 12) + 1])
+}
+export function calcWaterGap(
+  crop: Crop,
+  nasa: NASAClimateData,
+  start: number,
+  end: number,
+): number {
+  return totalIrrigationNeed(
+    buildIrrigationPlan(nasa.monthly, [
+      { crop, monthStart: start, monthEnd: end, suitability: 0, waterGapMm: 0 },
+    ]),
+  )
+}
+function evaluate(
+  type: StrategyType,
+  crops: RotationCrop[],
+  nasa: NASAClimateData,
+  soil: SoilData | null,
+): RotationStrategy {
+  const evaluated = crops.map((rc) => ({
+    ...rc,
+    suitability: windowSuitability(rc.crop, nasa, soil, rc.monthStart, rc.monthEnd)
+      .suitabilityScore,
+    waterGapMm: calcWaterGap(rc.crop, nasa, rc.monthStart, rc.monthEnd),
+  }))
+  const count = evaluated.length
+  const weighted = (f: (c: Crop) => number) =>
+    count ? evaluated.reduce((s, rc) => s + (f(rc.crop) * rc.suitability) / 100, 0) / count : 0
+  const covered = new Set(evaluated.flatMap((c) => monthRange(c.monthStart, c.monthEnd))).size
+  const irrigationTotal = evaluated.reduce((s, c) => s + c.waterGapMm, 0)
+  const nitrogenBalance = evaluated.reduce((s, c) => s + c.crop.nitrogenContribution, 0)
+  const fit = count ? evaluated.reduce((s, c) => s + c.suitability, 0) / count : 0
+  const scores = {
+    overall: 0,
+    soilHealth: weighted((c) => c.organicMatterImpact * 70 + (c.nitrogenFixing ? 30 : 0)),
+    waterConservation: count
+      ? (clamp(100 - (irrigationTotal / Math.max(1, covered)) * 1.1) * fit) / 100
+      : 0,
+    nitrogenFixing: weighted((c) => (c.nitrogenFixing ? 100 : 0)),
+    marketValue: weighted((c) => c.marketValue * 100),
+    erosionControl: (weighted((c) => c.erosionReduction * 100) * covered) / 12,
+    riskReduction:
+      fit * 0.75 + (count ? (new Set(evaluated.map((c) => c.crop.family)).size / 3) * 25 : 0),
   }
-  // Too much rain
-  return Math.max(20, 80 - (annualRainfall - need * 2.5) / need * 50 + crop.floodTolerance * 20)
-}
-
-function scoreSoilSuitability(crop: Crop, soil: SoilData | null): number {
-  if (!soil) return 60 // neutral if unknown
-  const [phLow, phHigh] = crop.soilPh
-  const ph = soil.ph
-
-  let phScore: number
-  if (ph >= phLow && ph <= phHigh) phScore = 100
-  else {
-    const dist = ph < phLow ? phLow - ph : ph - phHigh
-    phScore = Math.max(10, 100 - dist * 30)
+  for (const key of PRIORITY_KEYS) scores[key] = round(clamp(scores[key]))
+  const names = {
+    baseline: ['Baseline', 'بنیادی فصل چکر'],
+    'soil-first': ['Soil-first', 'مٹی کی صحت'],
+    'water-saver': ['Water-saver', 'پانی کی بچت'],
   }
-
-  // SOC bonus for high-OM crops
-  const socScore = soil.organicCarbon > 15 ? 100 : 60 + soil.organicCarbon * 2.7
-
-  return phScore * 0.6 + socScore * 0.4
-}
-
-export function scoreCropSuitability(crop: Crop, nasa: NASAClimateData, soil: SoilData | null): CropSuitability {
-  const avgTemp = nasa.avgTemp
-  const minMonthTemp = Math.min(...nasa.monthly.map(m => m.tempMin))
-  const maxMonthTemp = Math.max(...nasa.monthly.map(m => m.tempMax))
-
-  const tempScore = scoreTempSuitability(crop, avgTemp, minMonthTemp, maxMonthTemp)
-  const rainfallScore = scoreRainfallSuitability(crop, nasa.annualRainfall)
-  const soilScore = scoreSoilSuitability(crop, soil)
-  const suitabilityScore = tempScore * 0.4 + rainfallScore * 0.4 + soilScore * 0.2
-
-  const reasons: string[] = []
-  if (tempScore < 50) reasons.push(`Temperature mismatch: field avg ${avgTemp.toFixed(1)}°C vs crop optimum ${crop.tempOptimal[0]}–${crop.tempOptimal[1]}°C`)
-  if (rainfallScore < 50) reasons.push(`Rainfall mismatch: ${nasa.annualRainfall.toFixed(0)}mm vs crop need ${crop.rainfallNeeded}mm`)
-  if (soilScore < 50 && soil) reasons.push(`Soil pH ${soil.ph.toFixed(1)} outside crop range ${crop.soilPh[0]}–${crop.soilPh[1]}`)
-  if (suitabilityScore >= 75) reasons.push('Well-suited to local climate and soil conditions')
-
-  return { crop, suitabilityScore, tempScore, rainfallScore, soilScore, reasons }
-}
-
-// ── Water Gap Calculation ──
-
-export function calcWaterGap(crop: Crop, nasa: NASAClimateData, monthStart: number, monthEnd: number): number {
-  const months = monthStart <= monthEnd
-    ? nasa.monthly.slice(monthStart - 1, monthEnd)
-    : [...nasa.monthly.slice(monthStart - 1), ...nasa.monthly.slice(0, monthEnd)]
-
-  const totalRainfall = months.reduce((s, m) => s + m.rainfall, 0)
-  const growingDaysAvg = (crop.growingDays[0] + crop.growingDays[1]) / 2
-  const cropWaterNeed = crop.waterUse * growingDaysAvg
-  return Math.max(0, cropWaterNeed - totalRainfall)
-}
-
-// ── Rotation Builder ──
-
-function buildSeasonCover(crops: RotationCrop[]): boolean[] {
-  const covered = new Array(12).fill(false)
-  for (const rc of crops) {
-    let m = rc.monthStart - 1
-    while (m !== rc.monthEnd) {
-      covered[m] = true
-      m = (m + 1) % 12
-    }
-    covered[rc.monthEnd - 1] = true
+  const goal = {
+    baseline: 'seasonal climate fit and an illustrative market index',
+    'soil-first': 'legumes, organic matter and crop-family diversity',
+    'water-saver': 'lower water gaps and drought-tolerant crops',
   }
-  return covered
-}
-
-function assignMonths(crop: Crop, existing: RotationCrop[], nasa: NASAClimateData): [number, number] | null {
-  // Try to find a slot that fits the crop's growing days and climate preferences
-  const minDays = crop.growingDays[0]
-  const maxDays = crop.growingDays[1]
-  const covered = buildSeasonCover(existing)
-
-  // For seasonal crops, prefer their season
-  const preferredStarts: number[] = []
-  if (crop.season === 'kharif') preferredStarts.push(6, 7, 5)  // June/July/May
-  else if (crop.season === 'rabi') preferredStarts.push(10, 11, 9)  // Oct/Nov/Sep
-  else if (crop.season === 'zaid') preferredStarts.push(3, 4, 2)  // Mar/Apr/Feb
-  else preferredStarts.push(...[6, 10, 3, 1, 4, 7, 9, 2, 5, 8, 11, 12])
-
-  for (const start of preferredStarts) {
-    const months = Math.round((minDays + maxDays) / 2 / 30)
-    const end = ((start - 1 + months) % 12) + 1
-
-    // Check no overlap
-    let hasOverlap = false
-    for (let i = 0; i < months; i++) {
-      if (covered[(start - 1 + i) % 12]) { hasOverlap = true; break }
-    }
-    if (!hasOverlap) return [start, end]
+  return {
+    type,
+    name: names[type][0],
+    nameUrdu: names[type][1],
+    crops: evaluated,
+    scores,
+    irrigationTotal,
+    nitrogenBalance,
+    explanation: count
+      ? `Selected for ${goal[type]}. ${count} crops cover ${covered} of 12 months, with ${Math.round(irrigationTotal)} mm of estimated supplemental water and ${Math.round(fit)}/100 average seasonal suitability.`
+      : 'No feasible annual crop window was found in this small crop library. Do not plant from these results; seek local advice.',
+    benefits: count
+      ? [
+          `${covered} months of planned soil cover`,
+          `${evaluated.filter((c) => c.crop.nitrogenFixing).length} nitrogen-fixing crop(s)`,
+          `${new Set(evaluated.map((c) => c.crop.family)).size} crop families`,
+        ]
+      : [],
+    gaps: [
+      ...(nasa.kind !== 'live'
+        ? ['Climate inputs are demo or user-supplied data; not verified NASA retrievals.']
+        : []),
+      ...(soil?.source !== 'soilgrids' ? ['No local soil profile: soil fit is provisional.'] : []),
+      ...(covered < 12
+        ? [
+            `${12 - covered} months without a planned crop; confirm cover and transition periods locally.`,
+          ]
+        : []),
+      ...(evaluated.some((c) => c.suitability < 55)
+        ? ['At least one crop has a weak climate fit.']
+        : []),
+      'Market indices, nitrogen contributions and crop traits are illustrative assumptions, not yield or income predictions.',
+      'Cultivar, planting dates, pests, labour and irrigation access need local verification.',
+    ],
+    expertReviewNeeded: true,
+    expertReviewReason:
+      'Review this preliminary plan with a local agronomist. Monthly climate averages cannot establish field-scale suitability or predict individual weather events.',
   }
-  return null
 }
-
-type StrategyType = 'baseline' | 'soil-first' | 'water-saver'
-
-function strategyScore(crops: RotationCrop[], suitabilities: CropSuitability[]): RotationStrategy['scores'] {
-  const getSuit = (id: string) => suitabilities.find(s => s.crop.id === id)?.suitabilityScore ?? 50
-  const weighted = (fn: (c: Crop) => number) => crops.reduce((s, rc) => s + fn(rc.crop) * (getSuit(rc.crop.id) / 100), 0) / Math.max(1, crops.length)
-
-  const nitrogenBalance = crops.reduce((s, rc) => s + rc.crop.nitrogenContribution, 0)
-  const nScore = Math.min(100, Math.max(0, 50 + nitrogenBalance / 2))
-  const soilHealth = weighted(c => c.organicMatterImpact * 100) * 0.4 + nScore * 0.3 + weighted(c => c.erosionReduction * 100) * 0.3
-  const waterCons = 100 - weighted(c => c.waterUse * 10)
-  const nFix = weighted(c => c.nitrogenFixing ? c.nitrogenContribution : 0) / 1.5
-  const market = weighted(c => c.marketValue * 100)
-  const erosion = weighted(c => c.erosionReduction * 100)
-  const riskRed = weighted(c => (c.pestBreaker ? 20 : 0) + (c.coverCrop ? 15 : 0) + 65)
-
-  const overall = soilHealth * 0.25 + waterCons * 0.2 + nFix * 0.15 + market * 0.2 + erosion * 0.1 + riskRed * 0.1
-  return { overall, soilHealth, waterConservation: waterCons, nitrogenFixing: nFix, marketValue: market, erosionControl: erosion, riskReduction: riskRed }
-}
-
-function generateExplanation(strategy: StrategyType, crops: RotationCrop[], scores: RotationStrategy['scores'], nasa: NASAClimateData): string {
-  const cropList = crops.map(rc => rc.crop.name).join(', ')
-  const templates: Record<StrategyType, string> = {
-    baseline: `This baseline rotation (${cropList}) is selected for the best overall fit to your climate (avg ${nasa.avgTemp.toFixed(1)}°C, ${nasa.annualRainfall.toFixed(0)}mm/yr). Each crop matches local temperature and rainfall. Overall score: ${scores.overall.toFixed(0)}/100.`,
-    'soil-first': `This soil-restoration rotation (${cropList}) prioritises nitrogen fixation (${scores.nitrogenFixing.toFixed(0)}/100) and organic matter building (${scores.soilHealth.toFixed(0)}/100). Legumes and cover crops actively rebuild depleted soils over 2–3 seasons.`,
-    'water-saver': `This water-conservative rotation (${cropList}) minimises irrigation needs (water score: ${scores.waterConservation.toFixed(0)}/100). All selected crops tolerate the typical dry months in your location, reducing dependency on irrigation infrastructure.`,
-  }
-  return templates[strategy]
-}
-
-// ── Main Rotation Builder ──
-
 export function buildRotationStrategies(
   nasa: NASAClimateData,
   soil: SoilData | null,
-  priorities: FarmerPriorities
+  priorities: FarmerPriorities,
 ): RotationStrategy[] {
-  const suitabilities = CROPS.map(c => scoreCropSuitability(c, nasa, soil))
-  const suited = suitabilities.filter(s => s.suitabilityScore >= 40).sort((a, b) => b.suitabilityScore - a.suitabilityScore)
-
-  function buildRotation(filterFn: (s: CropSuitability) => boolean, maxCrops = 3): RotationCrop[] {
-    const pool = suited.filter(filterFn).slice(0, 10)
-    const selected: RotationCrop[] = []
-
-    for (const suit of pool) {
-      if (selected.length >= maxCrops) break
-      const slot = assignMonths(suit.crop, selected, nasa)
-      if (!slot) continue
-      const waterGap = calcWaterGap(suit.crop, nasa, slot[0], slot[1])
-      selected.push({ crop: suit.crop, monthStart: slot[0], monthEnd: slot[1], suitability: suit.suitabilityScore, waterGapMm: waterGap })
+  // Search all calendar starts globally; regional season names are never used for scheduling.
+  const candidates = CROPS.filter((c) => c.id !== 'fallow' && c.season !== 'perennial')
+    .flatMap((crop) =>
+      windows(crop).map(([monthStart, monthEnd]) => {
+        const fit = windowSuitability(crop, nasa, soil, monthStart, monthEnd)
+        return {
+          crop,
+          monthStart,
+          monthEnd,
+          suitability: fit.suitabilityScore,
+          tempScore: fit.tempScore,
+          waterGapMm: calcWaterGap(crop, nasa, monthStart, monthEnd),
+        }
+      }),
+    )
+    .filter((c) => c.tempScore >= 55 && c.suitability >= 45)
+  const types: StrategyType[] = ['baseline', 'soil-first', 'water-saver']
+  const strategies = types.map((type) => {
+    const objective = (c: (typeof candidates)[number]) => {
+      if (type === 'soil-first')
+        return (
+          c.suitability * 0.55 + (c.crop.nitrogenFixing ? 25 : 0) + c.crop.organicMatterImpact * 20
+        )
+      if (type === 'water-saver')
+        return (
+          c.suitability * 0.5 +
+          c.crop.droughtTolerance * 20 +
+          30 * Math.max(0, 1 - c.waterGapMm / monthRange(c.monthStart, c.monthEnd).length / 100)
+        )
+      return c.suitability * 0.8 + c.crop.marketValue * 20
     }
-    return selected
-  }
-
-  // Baseline: best overall suitability
-  const baselineCrops = buildRotation(s => s.suitabilityScore >= 60)
-
-  // Soil-first: prioritise N-fixing + high organic matter
-  const soilCrops = buildRotation(s =>
-    s.crop.nitrogenFixing || s.crop.coverCrop || s.crop.organicMatterImpact > 0.6
-  )
-
-  // Water-saver: lowest water use + highest drought tolerance
-  const waterCrops = buildRotation(s =>
-    s.crop.waterUse < 4.5 && s.crop.droughtTolerance > 0.5
-  )
-
-  const makeStrategy = (type: StrategyType, name: string, nameUrdu: string, crops: RotationCrop[]): RotationStrategy => {
-    if (crops.length === 0) {
-      // Fallback: take top 2 suited crops
-      const fallback = suited.slice(0, 2)
-      fallback.forEach(suit => {
-        const slot = assignMonths(suit.crop, crops, nasa)
-        if (slot) crops.push({ crop: suit.crop, monthStart: slot[0], monthEnd: slot[1], suitability: suit.suitabilityScore, waterGapMm: calcWaterGap(suit.crop, nasa, slot[0], slot[1]) })
-      })
+    const sorted = [...candidates].sort(
+      (a, b) =>
+        objective(b) - objective(a) ||
+        a.crop.id.localeCompare(b.crop.id) ||
+        a.monthStart - b.monthStart,
+    )
+    const selected: RotationCrop[] = [],
+      occupied = new Set<number>(),
+      families = new Set<string>()
+    for (const c of sorted) {
+      if (selected.length === 3) break
+      const months = monthRange(c.monthStart, c.monthEnd)
+      if (families.has(c.crop.family) || months.some((m) => occupied.has(m))) continue
+      selected.push(c)
+      families.add(c.crop.family)
+      months.forEach((m) => occupied.add(m))
     }
-    const scores = strategyScore(crops, suitabilities)
-    const explanation = generateExplanation(type, crops, scores, nasa)
-    const nitrogenBalance = crops.reduce((s, rc) => s + rc.crop.nitrogenContribution, 0)
-    const irrigationTotal = crops.reduce((s, rc) => s + rc.waterGapMm, 0)
-    const hasKnowledgeGap = crops.some(rc => rc.suitability < 60)
-    const needsExpert = scores.soilHealth < 50 || irrigationTotal > 500 || nitrogenBalance < -200
-
-    return {
-      type, name, nameUrdu, crops, scores, explanation,
-      benefits: crops.flatMap(rc => rc.crop.benefits.slice(0, 2)),
-      gaps: [
-        ...(hasKnowledgeGap ? ['Some crops have limited local trial data — verify with district agriculture office'] : []),
-        ...(irrigationTotal > 300 ? [`Irrigation infrastructure needed: ${irrigationTotal.toFixed(0)}mm/yr estimated`] : []),
-        ...(nitrogenBalance < -100 ? ['Nitrogen deficit may require external fertiliser input'] : []),
-        'Actual yields depend on seed quality, soil management and local pest pressure',
-      ],
-      expertReviewNeeded: needsExpert,
-      expertReviewReason: needsExpert ? 'This rotation shows significant gaps that require review by a local agricultural extension officer before implementation.' : '',
-      irrigationTotal,
-      nitrogenBalance,
-    }
-  }
-
-  const strategies = [
-    makeStrategy('baseline', 'Baseline Rotation', 'بنیادی فصل چکر', baselineCrops),
-    makeStrategy('soil-first', 'Soil Restoration', 'مٹی بحالی', soilCrops),
-    makeStrategy('water-saver', 'Water-Smart Rotation', 'پانی بچت', waterCrops),
-  ]
+    selected.sort((a, b) => a.monthStart - b.monthStart)
+    return evaluate(type, selected, nasa, soil)
+  })
   return rankStrategies(strategies, priorities)
 }
-
-export function rankStrategies(strategies: RotationStrategy[], priorities: FarmerPriorities): RotationStrategy[] {
-  const total = Object.values(priorities).reduce((s, v) => s + v, 0) || 1
-
-  return [...strategies].sort((a, b) => {
-    const score = (s: RotationStrategy) =>
-      (s.scores.waterConservation * priorities.waterConservation +
-       s.scores.soilHealth * priorities.soilHealth +
-       s.scores.marketValue * priorities.marketValue +
-       s.scores.nitrogenFixing * priorities.nitrogenFixing +
-       s.scores.erosionControl * priorities.erosionControl +
-       s.scores.riskReduction * priorities.riskReduction) / total
-    return score(b) - score(a)
-  })
+export function normalizedWeights(priorities: FarmerPriorities): FarmerPriorities {
+  const clean = Object.fromEntries(
+    PRIORITY_KEYS.map((k) => [k, Number.isFinite(priorities[k]) ? clamp(priorities[k]) : 0]),
+  ) as unknown as FarmerPriorities
+  const sum = Object.values(clean).reduce((a, b) => a + b, 0)
+  return Object.fromEntries(
+    PRIORITY_KEYS.map((k) => [k, sum ? clean[k] / sum : 1 / PRIORITY_KEYS.length]),
+  ) as unknown as FarmerPriorities
 }
-
-export function applyClimateStress(strategies: RotationStrategy[], nasa: NASAClimateData, scenario: ClimateScenario, soil: SoilData | null, priorities: FarmerPriorities): RotationStrategy[] {
-  const stressedNasa: NASAClimateData = {
-    ...nasa,
-    avgTemp: nasa.avgTemp + scenario.tempDelta,
-    annualRainfall: nasa.annualRainfall * (1 + scenario.rainfallDelta / 100),
-    monthly: nasa.monthly.map(m => ({
-      ...m,
-      tempMin: m.tempMin + scenario.tempDelta,
-      tempMax: m.tempMax + scenario.tempDelta,
-      tempAvg: m.tempAvg + scenario.tempDelta,
-      rainfall: m.rainfall * (1 + scenario.rainfallDelta / 100),
-    })),
-  }
-  return buildRotationStrategies(stressedNasa, soil, priorities)
+export function rankStrategies(
+  strategies: RotationStrategy[],
+  priorities: FarmerPriorities,
+): RotationStrategy[] {
+  const weights = normalizedWeights(priorities)
+  return strategies
+    .map((s) => ({
+      ...s,
+      scores: {
+        ...s.scores,
+        overall: round(PRIORITY_KEYS.reduce((sum, k) => sum + s.scores[k] * weights[k], 0)),
+      },
+    }))
+    .sort((a, b) => b.scores.overall - a.scores.overall || a.type.localeCompare(b.type))
+}
+export function applyClimateStress(
+  strategies: RotationStrategy[],
+  nasa: NASAClimateData,
+  scenario: ClimateScenario,
+  soil: SoilData | null,
+  priorities: FarmerPriorities,
+): RotationStrategy[] {
+  const stressed = stressClimate(nasa, scenario.tempDelta, scenario.rainfallDelta)
+  // Hold crops and planting windows fixed so before/after comparisons measure climate sensitivity.
+  return rankStrategies(
+    strategies.map((s) => evaluate(s.type, s.crops, stressed, soil)),
+    priorities,
+  )
 }
