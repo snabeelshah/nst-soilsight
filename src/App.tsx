@@ -3,6 +3,7 @@ import {
   Sprout,
   LayoutDashboard,
   Satellite,
+  CloudSun,
   CalendarDays,
   SlidersHorizontal,
   Leaf,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from './store/useAppStore'
 import { Overview } from './components/Overview'
+import MeteomaticsDashboard from './components/MeteomaticsDashboard'
 import { parseClimateImport } from './lib/importData'
 import { generateFallback } from './api/nasa-power'
 const CropPlanner = lazy(() =>
@@ -50,6 +52,7 @@ const navigation = [
   { id: 'overview', en: 'Field overview', ur: 'کھیت کا جائزہ', icon: LayoutDashboard },
   { id: 'crops', en: 'Crop planner', ur: 'فصلوں کی منصوبہ بندی', icon: Sprout },
   { id: 'nasa', en: 'NASA climate', ur: 'ناسا موسمی ڈیٹا', icon: Satellite },
+  { id: 'meteomatics', en: 'Live Weather', ur: 'موسم', icon: CloudSun },
   { id: 'risk', en: 'Risk calendar', ur: 'خطرے کا کیلنڈر', icon: CalendarDays },
   { id: 'simulator', en: 'Climate simulator', ur: 'موسمی تبدیلی', icon: SlidersHorizontal },
   { id: 'soil', en: 'Soil health', ur: 'مٹی کی صحت', icon: Leaf },
@@ -227,10 +230,11 @@ export default function App() {
     setSpeaking(true)
     window.speechSynthesis.speak(utterance)
   }
-  const view = {
+    const view = {
     overview: <Overview />,
     crops: <CropPlanner />,
     nasa: <NASADashboard />,
+    meteomatics: <MeteomaticsDashboard />,
     risk: <RiskCalendar />,
     simulator: <ClimateSimulator />,
     soil: <SoilHealthAdvisor />,

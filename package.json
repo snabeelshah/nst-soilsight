@@ -1,3 +1,4 @@
+
 {
   "name": "nst-soilsight",
   "private": true,
@@ -5,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server/index.js",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
