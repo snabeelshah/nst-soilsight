@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-space-950: #f8f5ef;
+  --color-space-900: #f1e9dc;
+  --color-space-800: #e8dccb;
+  --color-neon-blue: #8b6a42;
+  --color-neon-cyan: #78945f;
+  --color-neon-emerald: #6f8053;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f8f5ef;
+  color: #342a20;
+  overflow-x: hidden;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.leaflet-container {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: #eee5d7 !important;
+  border-radius: 0;
+}
+
+.leaflet-tile-pane {
+  filter: saturate(0.82) sepia(0.08);
+}
+
+[dir="rtl"] {
+  font-family: 'Noto Nastaliq Urdu', 'Plus Jakarta Sans', serif;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #eee7dc;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c9b99f;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #92734d;
+}
+
+.glass-panel {
+  background: rgba(255, 253, 248, 0.96);
+  border: 1px solid #e9dfcf;
+  box-shadow: 0 8px 24px rgba(80, 61, 35, 0.08);
+}
+
+.glass-panel-hover {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-panel-hover:hover {
+  border-color: #cbb99b;
+  box-shadow: 0 10px 24px rgba(80, 61, 35, 0.12);
+}
+
+.glass-pill {
+  background: #f3eadc;
+  border: 1px solid #e4d7c3;
+}
+
+.neon-border-blue {
+  box-shadow: 0 0 12px rgba(139, 106, 66, 0.15);
+  border-color: #b89a70;
+}
+
+.neon-border-green {
+  box-shadow: 0 0 12px rgba(111, 128, 83, 0.16);
+  border-color: #8b9b70;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s infinite ease-in-out;
+}
+
+.app-header {
+  background: rgba(250, 247, 241, 0.97);
+  border-color: #e7ddcd;
+  box-shadow: 0 4px 16px rgba(80, 61, 35, 0.06);
+}
+
+.app-header > div,
+.app-header nav {
+  background: transparent;
+  border-color: #e7ddcd;
+  scrollbar-width: none;
+}
+
+.app-header nav::-webkit-scrollbar {
+  display: none;
+}
+
+.app-header [class*="bg-slate-900"],
+.app-header [class*="bg-white/5"] {
+  background-color: #f1e9dc;
+}
+
+.app-header [class~="text-white"]:not(button),
+.app-header [class~="text-slate-200"],
+.app-header [class~="text-slate-300"] {
+  color: #463927;
+}
+
+.app-header [class~="text-slate-400"],
+.app-header [class~="text-slate-500"] {
+  color: #847766;
+}
+
+.app-header [class*="border-white/"] {
+  border-color: #e7ddcd;
+}
+
+.field-selector [class*="bg-slate-950"],
+.field-selector [class*="bg-slate-900"],
+.field-selector [class*="bg-[#050814]"] {
+  background-color: #f1e9dc;
+}
+
+.field-selector [class~="text-white"],
+.field-selector [class~="text-slate-200"],
+.field-selector [class~="text-slate-300"] {
+  color: #463927;
+}
+
+.field-selector [class~="text-slate-400"],
+.field-selector [class~="text-slate-500"] {
+  color: #847766;
+}
+
+.field-selector [class*="border-white/"] {
+  border-color: #e7ddcd;
+}
