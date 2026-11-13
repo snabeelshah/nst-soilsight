@@ -5,7 +5,7 @@ test('key planning views pass automated WCAG A/AA checks', async ({ page }) => {
   await page.goto('/')
   for (const [name, heading] of [
     ['Field overview', 'A clearer view of your next growing season.'],
-    ['Crop planner', 'Three ways to grow forward'],
+    ['Crop planner', 'Current practice versus two alternatives'],
     ['Risk calendar', 'Know when to pay closer attention'],
     ['Climate simulator', 'What if the next season feels different?'],
   ]) {

@@ -103,6 +103,21 @@ describe('rotation planning and scoring', () => {
     expect(ranked[0].scores.overall).toBeGreaterThanOrEqual(ranked[1].scores.overall)
     expect(JSON.stringify(original)).toBe(snapshot)
   })
+  it('evaluates the farmer-entered rotation without replacing its crops or sowing months', () => {
+    const entered = [
+      { cropId: 'wheat', monthStart: 11 },
+      { cropId: 'mungbean', monthStart: 4 },
+    ]
+    const current = buildRotationStrategies(nasa, soil, DEFAULT_PRIORITIES, entered).find(
+      (plan) => plan.type === 'baseline',
+    )!
+    expect(current.name).toBe("Farmer's current rotation")
+    expect(current.crops.map((crop) => [crop.crop.id, crop.monthStart])).toEqual([
+      ['wheat', 11],
+      ['mungbean', 4],
+    ])
+    expect(current.gaps[0]).toContain('user-entered current practice')
+  })
   it('uses equal weights for all-zero priorities', () => {
     const weights = normalizedWeights(
       Object.fromEntries(PRIORITY_KEYS.map((k) => [k, 0])) as unknown as typeof DEFAULT_PRIORITIES,

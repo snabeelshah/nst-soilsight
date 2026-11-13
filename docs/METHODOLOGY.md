@@ -32,13 +32,13 @@ For each annual crop, duration = ceil(mean growing days / 30.4), in whole months
 
 Rainfall adequacy = 100 × (1 − seasonal net gap / seasonal crop water need), clamped. Soil fit is a pH-range heuristic (35 points per pH unit outside the range); without actual SoilGrids retrieval, a neutral 60/100 is used. Suitability = 60% temperature + 25% rainfall adequacy + 15% soil. Candidates require temperature fit ≥55 and suitability ≥45. Irrigation-dependent crops can still qualify, and their water gaps remain explicit.
 
-The greedy objectives are:
+The three comparison plans are:
 
-- Baseline: 80% suitability + 20% illustrative market index.
+- Farmer's current rotation: entered crops and sowing months are evaluated as-is, without optimizing the sequence.
 - Soil-first: 55% suitability + 25 points for N-fixing crops + 20% organic-matter trait.
 - Water-saver: 50% suitability + 20% drought-tolerance trait + 30% inverse per-month irrigation gap.
 
-Each plan selects at most three crops, without overlapping calendar months or repeated crop families. It is not a global optimization and does not model transition days, labour constraints, cultivar availability or multi-year disease cycles. Plans can converge. Sites with no feasible candidate yield empty plans with zero scores rather than an invented recommendation.
+Each generated alternative selects at most three crops, without overlapping calendar months or repeated crop families. The current rotation may reveal overlaps because it represents farmer input rather than an optimized plan. The alternatives are not a global optimization and do not model transition days, labour constraints, cultivar availability or multi-year disease cycles. Plans can converge. Sites with no feasible generated candidate yield empty alternatives with zero scores rather than an invented recommendation.
 
 ## Scoring
 

@@ -27,7 +27,7 @@ A static host can serve `dist/` after `npm run build`; no backend, environment v
 - Leaflet field drawing, rectangle selection, boundary editing/deletion, spherical area and centroid. Changes invalidate old results and abort obsolete requests.
 - Location lookup through Nominatim, or offline latitude/longitude positioning. Search moves the map; it never invents a farm boundary.
 - NASA POWER climatology: temperature, precipitation, root/profile soil wetness, source links and provenance. Invalid/fill values do not become plausible climate data.
-- Three heuristic plans: Baseline, Soil-first and Water-saver. Annual candidates are evaluated over all twelve possible starting months, using seasonal rather than whole-year suitability.
+- Three comparable plans: an editable farmer-entered current rotation, Soil-first and Water-saver. Alternative annual candidates are evaluated over all twelve possible starting months, using seasonal rather than whole-year suitability.
 - Six priority sliders, normalized weights, live ranking and visible score contributions. All-zero weights produce an equal-weight comparison.
 - A twelve-month climate risk calendar. Thresholds are visible; it does not issue forecasts or flood alerts.
 - Monthly irrigation estimates inside the planner. The same calculation drives every displayed water gap and export.
@@ -76,6 +76,12 @@ month,tempMin,tempMax,tempAvg,rainfall
 ```
 
 The file must contain exactly **12 distinct months**, 1 through 12. Temperatures are °C; rainfall is **mm per month**. Optional `soilMoistureRoot` and `soilMoistureProf` values are dimensionless 0–1. JSON may include `lat` and `lon`; if present they must match the selected field within 0.01°. Derived totals and ET₀ are recalculated, never trusted from the file. Maximum file size: 1 MB. This normalized format is not the raw NASA CSV format, and imports are labelled as unverified estimates.
+
+## Challenge-resource alignment
+
+The official Field Shift resource list includes NASA POWER, SMAP, GPM IMERG, MODIS, Landsat/HLS, ECOSTRESS, GRACE/GRACE-FO, SRTM and GEDI. SoilSight uses NASA POWER as its core quantitative source and MODIS through NASA GIBS as a contextual map layer. The Sources & methods view identifies every other resource as a future evidence layer; the app never implies that an unimplemented dataset affects a score. SoilGrids and the illustrative crop library are complementary non-NASA inputs.
+
+The comparison includes the farmer's current rotation, as requested by the challenge. The opening current rotation is demo input and must be replaced with the farmer's actual crops and approximate sowing months before interpreting the comparison.
 
 ## Challenge demonstration
 

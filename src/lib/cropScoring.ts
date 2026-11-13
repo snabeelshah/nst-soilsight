@@ -8,6 +8,7 @@ import type {
   FarmerPriorities,
   ClimateScenario,
   StrategyType,
+  ExistingRotationEntry,
 } from '../types'
 import { CROPS } from './cropDatabase'
 import { clamp, monthRange, stressClimate, MONTHS } from './climate'
@@ -72,8 +73,11 @@ export function scoreCropSuitability(
     .sort((a, b) => b.suitabilityScore - a.suitabilityScore)[0]
 }
 function windows(crop: Crop): [number, number][] {
-  const duration = Math.min(12, Math.ceil((crop.growingDays[0] + crop.growingDays[1]) / 2 / 30.4))
+  const duration = cropDurationMonths(crop)
   return Array.from({ length: 12 }, (_, i) => [i + 1, ((i + duration - 1) % 12) + 1])
+}
+export function cropDurationMonths(crop: Crop): number {
+  return Math.min(12, Math.ceil((crop.growingDays[0] + crop.growingDays[1]) / 2 / 30.4))
 }
 export function calcWaterGap(
   crop: Crop,
@@ -120,12 +124,12 @@ function evaluate(
   }
   for (const key of PRIORITY_KEYS) scores[key] = round(clamp(scores[key]))
   const names = {
-    baseline: ['Baseline', 'بنیادی فصل چکر'],
+    baseline: ["Farmer's current rotation", 'موجودہ فصل چکر'],
     'soil-first': ['Soil-first', 'مٹی کی صحت'],
     'water-saver': ['Water-saver', 'پانی کی بچت'],
   }
   const goal = {
-    baseline: 'seasonal climate fit and an illustrative market index',
+    baseline: 'the farmer-entered current practice, evaluated without optimizing its crops or dates',
     'soil-first': 'legumes, organic matter and crop-family diversity',
     'water-saver': 'lower water gaps and drought-tolerant crops',
   }
@@ -172,6 +176,7 @@ export function buildRotationStrategies(
   nasa: NASAClimateData,
   soil: SoilData | null,
   priorities: FarmerPriorities,
+  existingRotation?: ExistingRotationEntry[],
 ): RotationStrategy[] {
   // Search all calendar starts globally; regional season names are never used for scheduling.
   const candidates = CROPS.filter((c) => c.id !== 'fallow' && c.season !== 'perennial')
@@ -189,20 +194,18 @@ export function buildRotationStrategies(
       }),
     )
     .filter((c) => c.tempScore >= 55 && c.suitability >= 45)
-  const types: StrategyType[] = ['baseline', 'soil-first', 'water-saver']
-  const strategies = types.map((type) => {
+  const generatedTypes: StrategyType[] = ['soil-first', 'water-saver']
+  const generated = generatedTypes.map((type) => {
     const objective = (c: (typeof candidates)[number]) => {
       if (type === 'soil-first')
         return (
           c.suitability * 0.55 + (c.crop.nitrogenFixing ? 25 : 0) + c.crop.organicMatterImpact * 20
         )
-      if (type === 'water-saver')
-        return (
-          c.suitability * 0.5 +
-          c.crop.droughtTolerance * 20 +
-          30 * Math.max(0, 1 - c.waterGapMm / monthRange(c.monthStart, c.monthEnd).length / 100)
-        )
-      return c.suitability * 0.8 + c.crop.marketValue * 20
+      return (
+        c.suitability * 0.5 +
+        c.crop.droughtTolerance * 20 +
+        30 * Math.max(0, 1 - c.waterGapMm / monthRange(c.monthStart, c.monthEnd).length / 100)
+      )
     }
     const sorted = [...candidates].sort(
       (a, b) =>
@@ -224,7 +227,39 @@ export function buildRotationStrategies(
     selected.sort((a, b) => a.monthStart - b.monthStart)
     return evaluate(type, selected, nasa, soil)
   })
-  return rankStrategies(strategies, priorities)
+  const entered = existingRotation
+    ?.map(({ cropId, monthStart }) => {
+      const crop = CROPS.find((candidate) => candidate.id === cropId)
+      if (!crop || crop.season === 'perennial' || crop.id === 'fallow') return null
+      const start = Math.max(1, Math.min(12, Math.round(monthStart)))
+      return {
+        crop,
+        monthStart: start,
+        monthEnd: ((start + cropDurationMonths(crop) - 2) % 12) + 1,
+        suitability: 0,
+        waterGapMm: 0,
+      }
+    })
+    .filter((entry): entry is RotationCrop => entry !== null)
+  // Backward-compatible fallback for imported/test calls without a farmer-entered rotation.
+  // The application always supplies an explicitly labelled editable demo rotation.
+  const fallback = candidates
+    .sort((a, b) => b.suitability * 0.8 + b.crop.marketValue * 20 - (a.suitability * 0.8 + a.crop.marketValue * 20))
+    .slice(0, 1)
+    .map(({ crop, monthStart, monthEnd, suitability, waterGapMm }) => ({
+      crop,
+      monthStart,
+      monthEnd,
+      suitability,
+      waterGapMm,
+    }))
+  const current = evaluate('baseline', entered?.length ? entered : fallback, nasa, soil)
+  current.gaps.unshift(
+    existingRotation?.length
+      ? 'This strategy reflects user-entered current practice; verify the crop sequence and sowing months.'
+      : 'No current rotation was supplied; this comparison uses an illustrative fallback and is not farmer practice.',
+  )
+  return rankStrategies([current, ...generated], priorities)
 }
 export function normalizedWeights(priorities: FarmerPriorities): FarmerPriorities {
   const clean = Object.fromEntries(
@@ -260,7 +295,16 @@ export function applyClimateStress(
   const stressed = stressClimate(nasa, scenario.tempDelta, scenario.rainfallDelta)
   // Hold crops and planting windows fixed so before/after comparisons measure climate sensitivity.
   return rankStrategies(
-    strategies.map((s) => evaluate(s.type, s.crops, stressed, soil)),
+    strategies.map((s) => {
+      const result = evaluate(s.type, s.crops, stressed, soil)
+      if (s.type === 'baseline') {
+        const provenanceGap = s.gaps.find(
+          (gap) => gap.startsWith('This strategy reflects') || gap.startsWith('No current rotation'),
+        )
+        if (provenanceGap) result.gaps.unshift(provenanceGap)
+      }
+      return result
+    }),
     priorities,
   )
 }

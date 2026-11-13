@@ -96,6 +96,10 @@ export interface CropSuitability {
   reasons: string[]
 }
 export type StrategyType = 'baseline' | 'soil-first' | 'water-saver'
+export interface ExistingRotationEntry {
+  cropId: string
+  monthStart: number
+}
 export interface RotationCrop {
   crop: Crop
   monthStart: number

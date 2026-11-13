@@ -33,6 +33,33 @@ input,
 select {
   font: inherit;
 }
+.current-rotation-editor {
+  padding: 22px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 28px;
+  align-items: end;
+}
+.rotation-input-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.rotation-input {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fffef9;
+}
+.rotation-input label {
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
 button,
 a,
 input,
@@ -1822,6 +1849,9 @@ dialog p {
   }
 }
 @media (max-width: 900px) {
+  .current-rotation-editor {
+    grid-template-columns: 1fr;
+  }
   .sidebar {
     position: static;
     width: 100%;
@@ -1886,6 +1916,9 @@ dialog p {
   }
 }
 @media (max-width: 640px) {
+  .rotation-input-grid {
+    grid-template-columns: 1fr;
+  }
   main {
     padding: 16px 16px 0;
   }

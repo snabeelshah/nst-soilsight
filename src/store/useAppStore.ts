@@ -6,6 +6,7 @@ import type {
   RotationStrategy,
   FarmerPriorities,
   ClimateScenario,
+  ExistingRotationEntry,
 } from '../types'
 import { buildRotationStrategies, rankStrategies, applyClimateStress } from '../lib/cropScoring'
 import { demoField } from '../lib/geometry'
@@ -20,6 +21,11 @@ export const DEFAULT_PRIORITIES: FarmerPriorities = {
   riskReduction: 5,
 }
 export const DEFAULT_SCENARIO: ClimateScenario = { tempDelta: 0, rainfallDelta: 0 }
+export const DEFAULT_EXISTING_ROTATION: ExistingRotationEntry[] = [
+  { cropId: 'wheat', monthStart: 11 },
+  { cropId: 'mungbean', monthStart: 4 },
+  { cropId: 'sorghum', monthStart: 7 },
+]
 interface State {
   field: FieldPolygon | null
   fieldName: string
@@ -34,6 +40,7 @@ interface State {
   climateScenario: ClimateScenario
   rankedStrategies: RotationStrategy[]
   stressedStrategies: RotationStrategy[]
+  existingRotation: ExistingRotationEntry[]
   setField: (f: FieldPolygon | null, name?: string) => void
   loadDemo: (lat: number, lon: number, name: string) => void
   fetchData: () => Promise<void>
@@ -42,16 +49,22 @@ interface State {
   setLanguage: (l: 'en' | 'ur') => void
   updatePriorities: (p: FarmerPriorities) => void
   updateClimateScenario: (s: ClimateScenario) => void
+  updateExistingRotation: (rotation: ExistingRotationEntry[]) => void
 }
 let controller: AbortController | undefined
 let requestId = 0
 const initialClimate = generateFallback(30.1575, 71.5249),
   initialSoil = getFallbackSoil()
-const initialStrategies = buildRotationStrategies(initialClimate, initialSoil, DEFAULT_PRIORITIES)
+const initialStrategies = buildRotationStrategies(
+  initialClimate,
+  initialSoil,
+  DEFAULT_PRIORITIES,
+  DEFAULT_EXISTING_ROTATION,
+)
 export const useAppStore = create<State>((set, get) => {
   const calculate = (nasa: NASAClimateData, soil: SoilData | null) => {
-    const { priorities, climateScenario } = get()
-    const rankedStrategies = buildRotationStrategies(nasa, soil, priorities)
+    const { priorities, climateScenario, existingRotation } = get()
+    const rankedStrategies = buildRotationStrategies(nasa, soil, priorities, existingRotation)
     return {
       rankedStrategies,
       stressedStrategies: applyClimateStress(
@@ -81,6 +94,7 @@ export const useAppStore = create<State>((set, get) => {
     climateScenario: DEFAULT_SCENARIO,
     rankedStrategies: initialStrategies,
     stressedStrategies: initialStrategies,
+    existingRotation: DEFAULT_EXISTING_ROTATION,
     setField: (field, name = 'My field') => {
       cancel()
       set({
@@ -172,6 +186,27 @@ export const useAppStore = create<State>((set, get) => {
         stressedStrategies: nasaData
           ? applyClimateStress(rankedStrategies, nasaData, climateScenario, soilData, priorities)
           : [],
+      })
+    },
+    updateExistingRotation: (existingRotation) => {
+      const { nasaData, soilData, priorities, climateScenario } = get()
+      if (!nasaData) return set({ existingRotation })
+      const rankedStrategies = buildRotationStrategies(
+        nasaData,
+        soilData,
+        priorities,
+        existingRotation,
+      )
+      set({
+        existingRotation,
+        rankedStrategies,
+        stressedStrategies: applyClimateStress(
+          rankedStrategies,
+          nasaData,
+          climateScenario,
+          soilData,
+          priorities,
+        ),
       })
     },
   }
