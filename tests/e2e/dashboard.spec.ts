@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { Buffer } from 'node:buffer'
 import { climateResponse, recentClimateResponse, soilResponse } from '../fixtures'
 const api = async (page: import('@playwright/test').Page) => {
   // External services are mocked for deterministic tests; this does not validate live access.
@@ -18,15 +19,16 @@ test.beforeEach(async ({ page }) => {
 })
 test('opens without an assumed field or calculated data', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Draw a polygon to begin.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+  await expect(page.getByText('No field selected', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Draw field boundary' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toHaveCount(0)
   await expect(page.getByText('Demo mode.', { exact: true })).toHaveCount(0)
 })
 test('demo provenance, all views, priorities, stress and exported evidence', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await expect(page.getByText('Demo mode.', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('Confirm farm boundary')).toBeChecked()
+  await expect(page.getByLabel(/This outline is one farm field/)).toBeChecked()
   await expect(page.locator('.nasa-query-point')).toHaveCount(1)
   await expect(page.getByText('NASA query point', { exact: true })).toBeVisible()
   await expect(
@@ -84,14 +86,14 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
   await page.getByRole('button', { name: 'Field overview', exact: true }).click()
   await expect(page.getByText('Demo mode.', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Clear field boundary' }).click()
-  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Crop planner', exact: true }).click()
   await expect(page.getByText('Your field comes first')).toBeVisible()
   await page.getByRole('button', { name: 'Field overview', exact: true }).click()
   await page.getByLabel('Search location or coordinates').fill('36.7468, -119.7726')
-  await page.getByRole('button', { name: 'Locate', exact: true }).click()
+  await page.getByRole('button', { name: 'Find', exact: true }).click()
   await expect(page.getByText('Location found.', { exact: false })).toBeVisible()
-  await page.getByRole('button', { name: 'Draw', exact: true }).click()
+  await page.getByRole('button', { name: 'Draw field boundary' }).click()
   const map = await page.locator('.field-map').boundingBox()
   expect(map).toBeTruthy()
   const x = map!.x + 200,
@@ -108,8 +110,8 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
     await page.mouse.click(x + dx, y + dy)
   }
   await expect(page.getByText('Boundary saved.', { exact: false })).toBeVisible()
-  await expect(page.getByLabel('Confirm farm boundary')).not.toBeChecked()
-  await page.getByLabel('Confirm farm boundary').check()
+  await expect(page.getByLabel(/This outline is one farm field/)).not.toBeChecked()
+  await page.getByLabel(/This outline is one farm field/).check()
   await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
@@ -119,19 +121,19 @@ test('searching a new place clears the previous field and prevents stale results
   page,
 }) => {
   await page.getByLabel('Search location or coordinates').fill('40, -105')
-  await page.getByRole('button', { name: 'Locate', exact: true }).click()
+  await page.getByRole('button', { name: 'Find', exact: true }).click()
   await expect(
     page.getByText('The previous field and results were cleared.', { exact: false }),
   ).toBeVisible()
   await expect(page.getByText('Demo mode.', { exact: true })).toHaveCount(0)
   await expect(page.locator('.nasa-query-point')).toHaveCount(0)
-  await expect(page.getByText('Draw a polygon to begin.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+  await expect(page.getByText('No field selected', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toHaveCount(0)
 })
 
 test('rejects a region-sized polygon before requesting data', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Draw', exact: true }).click()
+  await page.getByRole('button', { name: 'Draw field boundary' }).click()
   const map = await page.locator('.field-map').boundingBox()
   expect(map).toBeTruthy()
   const x = map!.x + 220,
@@ -147,8 +149,8 @@ test('rejects a region-sized polygon before requesting data', async ({ page }) =
     await page.mouse.click(x + dx, y + dy)
   }
   await expect(page.getByText('too large for farm-scale analysis', { exact: false })).toBeVisible()
-  await expect(page.getByText('Draw a polygon to begin.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+  await expect(page.getByText('No field selected', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toHaveCount(0)
 })
 
 test('uses a supported NASA imagery tile matrix and reports overlay failures separately', async ({
@@ -159,11 +161,13 @@ test('uses a supported NASA imagery tile matrix and reports overlay failures sep
     requestedTile = route.request().url()
     await route.abort('failed')
   })
-  await page.getByRole('button', { name: 'NASA imagery', exact: false }).click()
+  await page.getByRole('button', { name: 'NASA satellite', exact: false }).click()
   await expect.poll(() => requestedTile).toContain('GoogleMapsCompatible_Level8')
   expect(requestedTile).not.toContain('GoogleMapsCompatible_Level9')
-  await expect(page.getByText('NASA imagery is unavailable.', { exact: false })).toBeVisible()
-  await expect(page.getByText('Street map tiles are unavailable.', { exact: false })).toHaveCount(0)
+  await expect(
+    page.getByText('NASA satellite tiles are unavailable.', { exact: false }),
+  ).toBeVisible()
+  await expect(page.getByText('Map tiles are unavailable.', { exact: false })).toHaveCount(0)
 })
 test('failed services and invalid imports do not fabricate successful data', async ({ page }) => {
   await page.route('https://power.larc.nasa.gov/**', (route) =>
@@ -212,8 +216,8 @@ test('editing a drawn boundary updates geometry and invalidates earlier climate'
 }) => {
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
-  const before = await page.locator('.map-footer strong').innerText()
-  await page.getByRole('link', { name: 'Edit layers' }).click()
+  const before = await page.locator('.field-stats > strong').innerText()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   const handle = page.locator('.leaflet-editing-icon').first()
   await expect(handle).toBeVisible()
   const bounds = await handle.boundingBox()
@@ -221,8 +225,8 @@ test('editing a drawn boundary updates geometry and invalidates earlier climate'
   await page.mouse.down()
   await page.mouse.move(bounds!.x + 55, bounds!.y + 40, { steps: 8 })
   await page.mouse.up()
-  await page.locator('.leaflet-draw-actions a[title="Save changes"]').click()
-  await expect(page.locator('.map-footer strong')).not.toHaveText(before)
+  await page.getByRole('button', { name: 'Save boundary' }).click()
+  await expect(page.locator('.field-stats > strong')).not.toHaveText(before)
   await expect(page.getByText('NASA climate loaded', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Crop planner', exact: true }).click()
   await expect(page.getByText('Your field comes first')).toBeVisible()
