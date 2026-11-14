@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
-import { MapPin, Search, Pencil, Trash2, RefreshCw, Layers, Check } from 'lucide-react'
+import { MapPin, Search, Pencil, Trash2, RefreshCw, Layers, Check, X } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 import { createField, formatCoordinates, getFieldScaleWarning } from '../lib/geometry'
 import { DEMO_LOCATIONS } from '../lib/demoLocations'
@@ -13,6 +13,7 @@ export function FieldSelector() {
     mapRef = useRef<L.Map | null>(null),
     drawnRef = useRef<L.FeatureGroup | null>(null)
   const centroidRef = useRef<L.CircleMarker | null>(null)
+  const editHandlerRef = useRef<L.EditToolbar.Edit | null>(null)
   const queryInput = useRef<HTMLInputElement>(null)
   const layers = useRef<{ osm: L.TileLayer; satellite: L.TileLayer } | null>(null)
   const searchController = useRef<AbortController | null>(null)
@@ -22,6 +23,7 @@ export function FieldSelector() {
   const [query, setQuery] = useState(''),
     [searching, setSearching] = useState(false),
     [message, setMessage] = useState('')
+  const [editing, setEditing] = useState(false)
   const [confirmedFieldKey, setConfirmedFieldKey] = useState<string | null>(() => {
     const state = useAppStore.getState()
     return state.field && state.nasaData ? fieldKey(state.field) : null
@@ -71,35 +73,18 @@ export function FieldSelector() {
         }
       }
     }
-    map.addControl(
-      new L.Control.Draw({
-        draw: {
-          polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#47745a' } },
-          rectangle: {},
-          circle: false,
-          circlemarker: false,
-          marker: false,
-          polyline: false,
-        },
-        edit: { featureGroup: drawn },
-      }),
-    )
     map.on(L.Draw.Event.CREATED, (e) => updatePolygon((e as unknown as { layer: L.Polygon }).layer))
     map.on(L.Draw.Event.EDITED, (e) =>
       (e as unknown as { layers: L.LayerGroup }).layers.eachLayer((l) =>
         updatePolygon(l as L.Polygon),
       ),
     )
-    map.on(L.Draw.Event.DELETED, () => {
-      setConfirmedFieldKey(null)
-      setField(null)
-      setMessage('Boundary cleared. Search for a supported location and draw a new field.')
-    })
     const resize = new ResizeObserver(() => map.invalidateSize())
     resize.observe(element.current)
     return () => {
       resize.disconnect()
       searchController.current?.abort()
+      editHandlerRef.current?.disable()
       map.remove()
       mapRef.current = null
       centroidRef.current = null
@@ -150,6 +135,50 @@ export function FieldSelector() {
       allowIntersection: false,
       shapeOptions: { color: '#315b41' },
     }).enable()
+    setMessage('Click around the field edge, then click the first point to finish.')
+  }
+  const redrawBoundary = () => {
+    editHandlerRef.current?.disable()
+    editHandlerRef.current = null
+    setEditing(false)
+    drawnRef.current?.clearLayers()
+    centroidRef.current?.remove()
+    centroidRef.current = null
+    setConfirmedFieldKey(null)
+    setField(null)
+    startDrawing()
+  }
+  const startEditing = () => {
+    if (!mapRef.current || !drawnRef.current || !field) return
+    const handler = new L.EditToolbar.Edit(mapRef.current as L.DrawMap, {
+      featureGroup: drawnRef.current,
+      poly: { allowIntersection: false },
+    })
+    editHandlerRef.current = handler
+    handler.enable()
+    setEditing(true)
+    setMessage('Drag the boundary corners, then choose Save boundary.')
+  }
+  const saveEditing = () => {
+    editHandlerRef.current?.save()
+    editHandlerRef.current?.disable()
+    editHandlerRef.current = null
+    setEditing(false)
+  }
+  const cancelEditing = () => {
+    editHandlerRef.current?.revertLayers()
+    editHandlerRef.current?.disable()
+    editHandlerRef.current = null
+    setEditing(false)
+    setMessage('Boundary edits cancelled.')
+  }
+  const clearBoundary = () => {
+    editHandlerRef.current?.disable()
+    editHandlerRef.current = null
+    setEditing(false)
+    setConfirmedFieldKey(null)
+    setField(null)
+    setMessage('Boundary cleared. Find a location and draw one farm field.')
   }
   const currentFieldKey = field ? fieldKey(field) : null
   const fieldConfirmed = Boolean(currentFieldKey && confirmedFieldKey === currentFieldKey)
@@ -233,195 +262,234 @@ export function FieldSelector() {
   const scaleWarning = field ? getFieldScaleWarning(field) : null
   return (
     <section id="field-selector" className="panel field-panel" aria-label="Field boundary map">
-      <div className="panel-heading">
-        <div>
-          <span className="eyebrow">START HERE / YOUR LAND</span>
-          <h2>
-            <MapPin size={18} /> Choose your field
-          </h2>
-          <p className="field-intro">
-            Search anywhere in the world, trace the real boundary, then bring in NASA climate data.
-          </p>
-        </div>
-        <select
-          aria-label="Choose a demo location"
-          value=""
-          onChange={(e) => {
-            const loc = DEMO_LOCATIONS[Number(e.target.value)]
-            loadDemo(loc.lat, loc.lon, loc.name)
-            const demo = useAppStore.getState().field
-            setConfirmedFieldKey(demo ? fieldKey(demo) : null)
-            setMessage('Example boundary and synthetic climate loaded.')
-          }}
-        >
-          <option value="" disabled>
-            Try a demo location
-          </option>
-          {DEMO_LOCATIONS.map((l, i) => (
-            <option key={l.name} value={i}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field-progress" aria-label="Field setup progress">
-        <button
-          type="button"
-          className={startedFinding ? 'done' : 'active'}
-          aria-current={!startedFinding ? 'step' : undefined}
-          onClick={() => queryInput.current?.focus()}
-        >
-          <span className="step-index">{startedFinding ? <Check size={14} /> : '1'}</span>
-          <span>
-            <strong>Find a place</strong>
-            <small>City or coordinates</small>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={field ? 'done' : startedFinding ? 'active' : ''}
-          aria-current={startedFinding && !field ? 'step' : undefined}
-          onClick={startDrawing}
-        >
-          <span className="step-index">{field ? <Check size={14} /> : '2'}</span>
-          <span>
-            <strong>Draw the boundary</strong>
-            <small>
-              {field ? `${field.areaHectares.toFixed(2)} hectares selected` : 'Outline the field'}
-            </small>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={climateReady ? 'done' : field ? 'active' : ''}
-          aria-current={field && !climateReady ? 'step' : undefined}
-          disabled={!field || !fieldConfirmed || loading}
-          onClick={() => void loadLiveData()}
-        >
-          <span className="step-index">{climateReady ? <Check size={14} /> : '3'}</span>
-          <span>
-            <strong>{loading ? 'Loading NASA data…' : 'Load NASA data'}</strong>
-            <small>
-              {climateReady
-                ? 'Climate is ready'
-                : field && !fieldConfirmed
-                  ? 'Confirm the farm boundary below'
-                  : 'Build the field baseline'}
-            </small>
-          </span>
-        </button>
-      </div>
-      <div className="map-toolbar">
-        <form onSubmit={locate}>
-          <Search size={16} />
-          <input
-            ref={queryInput}
-            aria-label="Search location or coordinates"
-            placeholder="City or latitude, longitude"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <button className="btn small" disabled={searching}>
-            {searching ? 'Finding…' : 'Locate'}
-          </button>
-        </form>
-        <div className="segmented" aria-label="Map layer">
-          <button aria-pressed={layer === 'osm'} onClick={() => changeLayer('osm')}>
-            Street
-          </button>
-          <button aria-pressed={layer === 'satellite'} onClick={() => changeLayer('satellite')}>
-            <Layers size={13} /> NASA imagery
-          </button>
-        </div>
-      </div>
-      <div className="map-wrap">
-        <div
-          ref={element}
-          className="field-map"
-          aria-label="Interactive map: use drawing tools to select a field"
-        />
-        {tileErrors[layer] && (
-          <div className="map-notice" role="status">
-            {layer === 'satellite'
-              ? 'NASA imagery is unavailable. Switch to Street view; boundary drawing and calculations still work.'
-              : 'Street map tiles are unavailable. Boundary drawing and calculations still work.'}
+      <div className="field-workspace">
+        <aside className="field-guide">
+          <div className="field-heading">
+            <span className="eyebrow">START HERE / YOUR LAND</span>
+            <h2>
+              <MapPin size={19} /> Choose your field
+            </h2>
+            <p>Find the farm, trace one field, then load its regional NASA climate.</p>
           </div>
-        )}
-      </div>
-      {layer === 'satellite' && (
-        <p className="caption inset">
-          MODIS Terra surface reflectance · 1 May 2024 · coarse regional imagery enlarged at field
-          zoom. No within-field analysis.
-        </p>
-      )}
-      {field && (
-        <label className="field-confirmation">
-          <input
-            type="checkbox"
-            checked={fieldConfirmed}
-            onChange={(event) =>
-              setConfirmedFieldKey(event.target.checked && currentFieldKey ? currentFieldKey : null)
-            }
-          />
-          <span>
-            <strong>Confirm farm boundary</strong>
-            This polygon represents one farm or managed field—not a city, district or country.
-          </span>
-        </label>
-      )}
-      <div className="map-footer">
-        <div>
-          {field ? (
-            <>
-              <strong>{field.areaHectares.toFixed(2)} ha</strong>
-              <span className="muted"> · {field.areaAcres.toFixed(2)} acres</span>
-              <div className="caption">
-                {formatCoordinates(field.center.lat, field.center.lng)} · calculated boundary area
+
+          <ol className="field-steps" aria-label="Field setup progress">
+            <li
+              className={startedFinding ? 'done' : 'active'}
+              aria-current={!startedFinding ? 'step' : undefined}
+            >
+              <span className="step-index">{startedFinding ? <Check size={14} /> : '1'}</span>
+              <span>
+                <strong>Find the farm</strong>
+                <small>Search, enter coordinates or move the map</small>
+              </span>
+            </li>
+            <li
+              className={field ? 'done' : startedFinding ? 'active' : ''}
+              aria-current={startedFinding && !field ? 'step' : undefined}
+            >
+              <span className="step-index">{field ? <Check size={14} /> : '2'}</span>
+              <span>
+                <strong>Outline one field</strong>
+                <small>Click each corner and close the shape</small>
+              </span>
+            </li>
+            <li
+              className={climateReady ? 'done' : field ? 'active' : ''}
+              aria-current={field && !climateReady ? 'step' : undefined}
+            >
+              <span className="step-index">{climateReady ? <Check size={14} /> : '3'}</span>
+              <span>
+                <strong>{climateReady ? 'Climate ready' : 'Confirm and load'}</strong>
+                <small>NASA POWER uses the marked centre point</small>
+              </span>
+            </li>
+          </ol>
+
+          <div className="location-tools">
+            <form onSubmit={locate}>
+              <Search size={16} />
+              <input
+                ref={queryInput}
+                aria-label="Search location or coordinates"
+                placeholder="City or latitude, longitude"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <button className="btn small" disabled={searching}>
+                {searching ? 'Finding…' : 'Find'}
+              </button>
+            </form>
+            <label className="demo-picker">
+              <span>Or open a labelled example</span>
+              <select
+                aria-label="Choose a demo location"
+                value=""
+                onChange={(e) => {
+                  const loc = DEMO_LOCATIONS[Number(e.target.value)]
+                  loadDemo(loc.lat, loc.lon, loc.name)
+                  const demo = useAppStore.getState().field
+                  setConfirmedFieldKey(demo ? fieldKey(demo) : null)
+                  setMessage('Example boundary and synthetic climate loaded.')
+                }}
+              >
+                <option value="" disabled>
+                  Choose an example field…
+                </option>
+                {DEMO_LOCATIONS.map((l, i) => (
+                  <option key={l.name} value={i}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="field-selection map-footer">
+            {field ? (
+              <div className="field-stats">
+                <span className="selection-label">
+                  <Check size={13} /> FIELD SELECTED
+                </span>
+                <strong>{field.areaHectares.toFixed(2)} ha</strong>
+                <span className="muted"> · {field.areaAcres.toFixed(2)} acres</span>
+                <div className="caption">
+                  {formatCoordinates(field.center.lat, field.center.lng)}
+                </div>
               </div>
-            </>
-          ) : (
-            <span className="muted">Draw a polygon to begin.</span>
+            ) : (
+              <div className="field-empty">
+                <strong>No field selected</strong>
+                <span>Move to the farm, then start drawing.</span>
+              </div>
+            )}
+
+            {field && (
+              <label className="field-confirmation">
+                <input
+                  type="checkbox"
+                  checked={fieldConfirmed}
+                  onChange={(event) =>
+                    setConfirmedFieldKey(
+                      event.target.checked && currentFieldKey ? currentFieldKey : null,
+                    )
+                  }
+                />
+                <span>
+                  <strong>This outline is one farm field</strong>
+                  Not a city, district, province or country.
+                </span>
+              </label>
+            )}
+
+            <div className="field-actions">
+              {editing ? (
+                <>
+                  <button className="btn primary" onClick={saveEditing}>
+                    <Check size={15} /> Save boundary
+                  </button>
+                  <button className="btn small" onClick={cancelEditing}>
+                    <X size={15} /> Cancel
+                  </button>
+                </>
+              ) : field ? (
+                <>
+                  <div className="boundary-actions">
+                    <button className="btn small" onClick={startEditing}>
+                      <Pencil size={14} /> Edit
+                    </button>
+                    <button className="btn small" onClick={redrawBoundary}>
+                      Redraw
+                    </button>
+                    <button
+                      className="icon-btn"
+                      aria-label="Clear field boundary"
+                      title="Clear field"
+                      onClick={clearBoundary}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <button
+                    className="btn primary load-field-data"
+                    onClick={() => void loadLiveData()}
+                    disabled={!fieldConfirmed || loading}
+                  >
+                    <RefreshCw size={15} className={loading ? 'spin' : ''} />
+                    {loading ? 'Loading data…' : 'Load NASA data'}
+                  </button>
+                </>
+              ) : (
+                <button className="btn primary draw-field" onClick={startDrawing}>
+                  <Pencil size={15} /> Draw field boundary
+                </button>
+              )}
+            </div>
+          </div>
+
+          {message && (
+            <p className="field-message" role="status">
+              {message}
+            </p>
           )}
-        </div>
-        <div className="button-row">
-          <button className="btn small" onClick={startDrawing}>
-            <Pencil size={14} /> Draw
-          </button>
-          <button
-            className="icon-btn"
-            aria-label="Clear field boundary"
-            disabled={!field}
-            onClick={() => {
-              setConfirmedFieldKey(null)
-              setField(null)
-            }}
-          >
-            <Trash2 size={16} />
-          </button>
-          <button
-            className="btn primary"
-            onClick={() => void loadLiveData()}
-            disabled={!field || !fieldConfirmed || loading}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            {loading ? 'Loading data…' : 'Load NASA data'}
-          </button>
+          {scaleWarning && (
+            <p className="field-scale-warning" role="status">
+              {scaleWarning}
+            </p>
+          )}
+        </aside>
+
+        <div className="field-map-column">
+          <div className="map-titlebar">
+            <div>
+              <strong>{field ? 'Your field boundary' : 'Interactive field map'}</strong>
+              <span>{field ? 'Orange dot = NASA query point' : 'Drag to move · +/− to zoom'}</span>
+            </div>
+            <div className="segmented" aria-label="Map layer">
+              <button aria-pressed={layer === 'osm'} onClick={() => changeLayer('osm')}>
+                Map
+              </button>
+              <button aria-pressed={layer === 'satellite'} onClick={() => changeLayer('satellite')}>
+                <Layers size={13} /> NASA satellite
+              </button>
+            </div>
+          </div>
+          <div className="map-wrap">
+            <div
+              ref={element}
+              className="field-map"
+              aria-label="Interactive map: use drawing tools to select a field"
+            />
+            {!field && (
+              <div className="map-coach">
+                <Pencil size={14} />
+                <span>
+                  Choose <strong>Draw field boundary</strong>, then click each corner of the field.
+                </span>
+              </div>
+            )}
+            {tileErrors[layer] && (
+              <div className="map-notice" role="status">
+                {layer === 'satellite'
+                  ? 'NASA satellite tiles are unavailable. Switch to Map; drawing still works.'
+                  : 'Map tiles are unavailable. Boundary drawing and calculations still work.'}
+              </div>
+            )}
+          </div>
+          {layer === 'satellite' && (
+            <p className="satellite-note">
+              NASA GIBS · MODIS Terra surface reflectance · 1 May 2024 · regional context only
+            </p>
+          )}
+          <details className="field-explainer">
+            <summary>How does the field connect to NASA data?</summary>
+            <p>
+              The polygon calculates area and its centre. Only the orange centre point is sent to
+              NASA POWER, which returns a regional 0.5° × 0.625° climate grid cell—not a field
+              sensor or an average of every point inside the boundary.
+            </p>
+          </details>
         </div>
       </div>
-      {message && (
-        <p className="caption inset" role="status">
-          {message}
-        </p>
-      )}
-      {scaleWarning && (
-        <p className="field-scale-warning" role="status">
-          {scaleWarning}
-        </p>
-      )}
-      <p className="caption inset">
-        The orange marker is the only point sent to NASA POWER. Climate represents its regional 0.5°
-        × 0.625° grid cell—not an average across the polygon or a field measurement.
-      </p>
     </section>
   )
 }
