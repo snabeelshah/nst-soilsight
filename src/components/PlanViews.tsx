@@ -1,5 +1,21 @@
 import { useState } from 'react'
-import { ArrowRight, Download, RotateCcw, Check, Droplets } from 'lucide-react'
+import {
+  ArrowRight,
+  Download,
+  RotateCcw,
+  Check,
+  Droplets,
+  Loader2,
+  AlertTriangle,
+  RefreshCw,
+  Info,
+  TrendingUp,
+  Shield,
+  Leaf,
+  Coins,
+  ShieldAlert,
+  FileWarning,
+} from 'lucide-react'
 import { useAppStore, DEFAULT_PRIORITIES, DEFAULT_SCENARIO } from '../store/useAppStore'
 import { normalizedWeights, PRIORITY_KEYS } from '../lib/cropScoring'
 import { MONTHS, monthRange } from '../lib/climate'
@@ -41,8 +57,19 @@ export const CRITERIA: Record<keyof FarmerPriorities, { label: string; ur: strin
     },
   }
 export function Priorities() {
-  const { priorities, updatePriorities, language } = useAppStore()
+  const { priorities, updatePriorities, language, loading: storeLoading } = useAppStore()
   const weights = normalizedWeights(priorities)
+  const [recalculating, setRecalculating] = useState(false)
+  const total = PRIORITY_KEYS.reduce((sum, k) => sum + priorities[k], 0)
+  const handlePriorityChange = async (key: keyof FarmerPriorities, value: number) => {
+    const newPriorities = { ...priorities, [key]: value }
+    setRecalculating(true)
+    try {
+      await updatePriorities(newPriorities)
+    } finally {
+      setRecalculating(false)
+    }
+  }
   return (
     <section className="panel priorities">
       <div className="panel-heading">
@@ -50,17 +77,27 @@ export function Priorities() {
           <span className="eyebrow">YOU SET THE BALANCE</span>
           <h3>What matters most?</h3>
         </div>
-        <button
-          className="icon-btn"
-          aria-label="Reset priorities"
-          onClick={() => updatePriorities(DEFAULT_PRIORITIES)}
-        >
-          <RotateCcw size={16} />
-        </button>
+        <div className="button-row">
+          {recalculating && (
+            <span className="caption" role="status" aria-live="polite">
+              <Loader2 size={14} className="spin" /> Recalculating…
+            </span>
+          )}
+          <button
+            className="icon-btn"
+            aria-label="Reset priorities"
+            onClick={() => {
+              setRecalculating(true)
+              updatePriorities(DEFAULT_PRIORITIES).finally(() => setRecalculating(false))
+            }}
+          >
+            <RotateCcw size={16} />
+          </button>
+        </div>
       </div>
       <p className="caption">
-        Adjust relative importance. Weights automatically add up to 100%; all zero uses equal
-        weights.
+        Adjust relative importance. Weights automatically normalize to 100%; all zero uses equal
+        weights. Total raw weight: {total} points.
       </p>
       {PRIORITY_KEYS.map((key) => (
         <div className="priority" key={key}>
@@ -77,7 +114,8 @@ export function Priorities() {
             max="100"
             step="5"
             value={priorities[key]}
-            onChange={(e) => updatePriorities({ ...priorities, [key]: Number(e.target.value) })}
+            disabled={storeLoading}
+            onChange={(e) => void handlePriorityChange(key, Number(e.target.value))}
           />
           <p>{CRITERIA[key].help}</p>
         </div>
@@ -86,7 +124,7 @@ export function Priorities() {
   )
 }
 function StrategyCard({ strategy, rank }: { strategy: RotationStrategy; rank: number }) {
-  const { priorities, language } = useAppStore()
+  const { priorities, language, nasaData } = useAppStore()
   const weights = normalizedWeights(priorities)
   return (
     <article className={`panel strategy-card ${rank === 0 ? 'winner' : ''}`}>
@@ -106,6 +144,8 @@ function StrategyCard({ strategy, rank }: { strategy: RotationStrategy; rank: nu
         </span>
       </div>
       <h3>{language === 'ur' ? strategy.nameUrdu : strategy.name}</h3>
+
+      {/* Crop sequence */}
       <p className="strategy-sequence">
         {strategy.crops.length
           ? strategy.crops
@@ -113,6 +153,8 @@ function StrategyCard({ strategy, rank }: { strategy: RotationStrategy; rank: nu
               .join(' → ')
           : 'No feasible crops found'}
       </p>
+
+      {/* Visual timeline */}
       <div className="rotation-timeline" aria-label={`${strategy.name} crop calendar`}>
         <div className="timeline-months">
           {MONTHS.map((m) => (
@@ -142,16 +184,79 @@ function StrategyCard({ strategy, rank }: { strategy: RotationStrategy; rank: nu
           </div>
         ))}
       </div>
+
+      {/* Key score cards: Water, Soil, Income-potential */}
+      <div className="score-cards">
+        <div className="score-card" title="Water conservation score">
+          <Droplets size={14} />
+          <div>
+            <span className="caption">Water score</span>
+            <strong>{strategy.scores.waterConservation.toFixed(1)}</strong>
+          </div>
+        </div>
+        <div className="score-card" title="Soil health score">
+          <Leaf size={14} />
+          <div>
+            <span className="caption">Soil score</span>
+            <strong>{strategy.scores.soilHealth.toFixed(1)}</strong>
+          </div>
+        </div>
+        <div className="score-card" title="Income potential score">
+          <Coins size={14} />
+          <div>
+            <span className="caption">Income potential</span>
+            <strong>{strategy.scores.marketValue.toFixed(1)}</strong>
+          </div>
+        </div>
+      </div>
+
+      {/* Explanation */}
       <p className="body-copy">
         {language === 'ur'
           ? `یہ ابتدائی منصوبہ ${strategy.crops.length} فصلوں پر مشتمل ہے۔ پانی کی اندازاً کمی ${Math.round(strategy.irrigationTotal)} ملی میٹر ہے۔ مقامی ماہر سے تصدیق کریں۔`
           : strategy.explanation}
       </p>
+
+      {/* Water gap */}
       <div className="strategy-water">
         <Droplets size={16} />
         <strong>{number(strategy.irrigationTotal)} mm</strong>
         <span>estimated water gap / year</span>
       </div>
+
+      {/* Benefits */}
+      {strategy.benefits && strategy.benefits.length > 0 && (
+        <details open={rank === 0}>
+          <summary>
+            <TrendingUp size={14} /> Benefits
+          </summary>
+          <ul className="benefits-list">
+            {strategy.benefits.map((b) => (
+              <li key={b} className="benefit-item">
+                <Check size={12} /> {b}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* Risks */}
+      {strategy.risks && strategy.risks.length > 0 && (
+        <details>
+          <summary>
+            <ShieldAlert size={14} /> Risks
+          </summary>
+          <ul className="risks-list">
+            {strategy.risks.map((r) => (
+              <li key={r} className="risk-item">
+                <AlertTriangle size={12} /> {r}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* Score breakdown */}
       <details>
         <summary>Why this score?</summary>
         <p className="caption">
@@ -171,19 +276,37 @@ function StrategyCard({ strategy, rank }: { strategy: RotationStrategy; rank: nu
         </div>
         <p className="caption">Rounded contributions may differ slightly from the total.</p>
       </details>
+
+      {/* Confidence & data gaps */}
       <details>
-        <summary>Assumptions & gaps</summary>
+        <summary>
+          <FileWarning size={14} /> Confidence & data gaps
+        </summary>
+        {nasaData && (
+          <div className={`notice ${nasaData.kind !== 'live' ? 'warning' : ''}`} role="note">
+            <Info size={14} />
+            <div>
+              <strong>{nasaData.confidence.label}</strong>
+              <p className="caption">{nasaData.confidence.description}</p>
+            </div>
+          </div>
+        )}
         <ul>
           {strategy.gaps.map((g) => (
             <li key={g}>{g}</li>
           ))}
         </ul>
+        {strategy.expertReviewNeeded && (
+          <p className="caption notice">
+            <Shield size={14} /> {strategy.expertReviewReason}
+          </p>
+        )}
       </details>
     </article>
   )
 }
 export function CropPlanner() {
-  const { nasaData, rankedStrategies } = useAppStore()
+  const { nasaData, rankedStrategies, loading, error } = useAppStore()
   if (!nasaData) return <EmptyState />
   return (
     <div className="view-stack">
@@ -193,12 +316,36 @@ export function CropPlanner() {
         description="The same field. Three approaches. Your priorities decide the ranking."
       />
       <SourceNote />
+      {loading && (
+        <div className="notice" role="status" aria-live="polite">
+          <Loader2 size={16} className="spin" /> Recalculating strategies…
+        </div>
+      )}
+      {error && (
+        <div className="notice warning" role="alert">
+          <AlertTriangle size={16} /> {error}
+          <button
+            className="btn small"
+            onClick={() => void useAppStore.getState().fetchData()}
+          >
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      )}
       <div className="planner-layout">
         <Priorities />
         <div className="strategy-grid" aria-live="polite">
-          {rankedStrategies.map((s, i) => (
-            <StrategyCard key={s.type} strategy={s} rank={i} />
-          ))}
+          {rankedStrategies.length === 0 && !loading ? (
+            <div className="panel empty-state" role="status">
+              <Info size={24} />
+              <h3>No strategies available</h3>
+              <p>Load climate data for your field to generate crop rotation strategies.</p>
+            </div>
+          ) : (
+            rankedStrategies.map((s, i) => (
+              <StrategyCard key={s.type} strategy={s} rank={i} />
+            ))
+          )}
         </div>
       </div>
       <ExpertBanner />
@@ -300,8 +447,27 @@ export function ClimateSimulator() {
     stressedStrategies,
     climateScenario,
     updateClimateScenario,
+    loading,
   } = useAppStore()
+  const [simulating, setSimulating] = useState(false)
+  const [simError, setSimError] = useState('')
+
   if (!nasa) return <EmptyState />
+
+  const handleScenarioChange = async (newScenario: typeof climateScenario) => {
+    setSimulating(true)
+    setSimError('')
+    try {
+      await updateClimateScenario(newScenario)
+    } catch {
+      setSimError('Scenario simulation failed. Results shown are from local estimation.')
+    } finally {
+      setSimulating(false)
+    }
+  }
+
+  const isModified = climateScenario.tempDelta !== 0 || climateScenario.rainfallDelta !== 0
+
   return (
     <div className="view-stack">
       <PanelTitle
@@ -309,13 +475,39 @@ export function ClimateSimulator() {
         title="What if the next season feels different?"
         description="Apply a hypothetical change to the same crops and planting windows. This is a sensitivity test, not a climate projection."
       />
+
+      {/* Hypothetical disclaimer */}
+      <div className="notice" role="note">
+        <AlertTriangle size={16} />
+        <div>
+          <strong>Hypothetical scenario — not a forecast.</strong>
+          <p className="caption">
+            These results show sensitivity to uniform temperature and rainfall shifts applied to
+            the same crop plan. They are not climate projections, not IPCC scenarios, and should
+            not be used as weather predictions.
+          </p>
+        </div>
+      </div>
+
       <section className="panel simulator-controls">
         <div className="control-heading">
           <span className="tag amber">Estimated scenario</span>
-          <button className="btn small" onClick={() => updateClimateScenario(DEFAULT_SCENARIO)}>
-            <RotateCcw size={14} /> Reset scenario
-          </button>
+          <div className="button-row">
+            {simulating && (
+              <span className="caption" role="status" aria-live="polite">
+                <Loader2 size={14} className="spin" /> Simulating…
+              </span>
+            )}
+            <button className="btn small" onClick={() => void handleScenarioChange(DEFAULT_SCENARIO)}>
+              <RotateCcw size={14} /> Reset scenario
+            </button>
+          </div>
         </div>
+        {simError && (
+          <div className="notice warning" role="alert">
+            <AlertTriangle size={14} /> {simError}
+          </div>
+        )}
         <div className="two-columns">
           <div>
             <label htmlFor="temp-delta">
@@ -328,8 +520,9 @@ export function ClimateSimulator() {
               max="5"
               step="0.5"
               value={climateScenario.tempDelta}
+              disabled={loading}
               onChange={(e) =>
-                updateClimateScenario({ ...climateScenario, tempDelta: Number(e.target.value) })
+                void handleScenarioChange({ ...climateScenario, tempDelta: Number(e.target.value) })
               }
             />
             <div className="range-endpoints">
@@ -352,8 +545,9 @@ export function ClimateSimulator() {
               max="50"
               step="5"
               value={climateScenario.rainfallDelta}
+              disabled={loading}
               onChange={(e) =>
-                updateClimateScenario({ ...climateScenario, rainfallDelta: Number(e.target.value) })
+                void handleScenarioChange({ ...climateScenario, rainfallDelta: Number(e.target.value) })
               }
             />
             <div className="range-endpoints">
@@ -363,6 +557,7 @@ export function ClimateSimulator() {
           </div>
         </div>
       </section>
+
       <div className="two-columns">
         <section className="panel compare-panel">
           <span className="eyebrow">BASELINE</span>
@@ -374,25 +569,30 @@ export function ClimateSimulator() {
           ))}
         </section>
         <section className="panel compare-panel scenario" aria-live="polite">
-          <span className="eyebrow">YOUR SCENARIO</span>
+          <span className="eyebrow">YOUR SCENARIO {isModified ? '(HYPOTHETICAL)' : ''}</span>
           <h3>
             {number(nasa.avgTemp + climateScenario.tempDelta, 1)}°C ·{' '}
             {number(nasa.annualRainfall * (1 + climateScenario.rainfallDelta / 100))} mm/year
           </h3>
-          {stressedStrategies.map((s, i) => (
-            <Comparison
-              key={s.type}
-              strategy={s}
-              rank={i}
-              before={rankedStrategies.find((b) => b.type === s.type)}
-            />
-          ))}
+          {stressedStrategies.length === 0 && !simulating ? (
+            <p className="muted">Adjust scenario to see results.</p>
+          ) : (
+            stressedStrategies.map((s, i) => (
+              <Comparison
+                key={s.type}
+                strategy={s}
+                rank={i}
+                before={rankedStrategies.find((b) => b.type === s.type)}
+              />
+            ))
+          )}
         </section>
       </div>
+
       <p className="caption">
         Temperature shifts change seasonal fit and estimated ET₀. Rainfall scales each month. Soil
         and farmer priorities stay fixed. No CO₂, extreme events or future climate-model scenarios
-        are included.
+        are included. Results are clearly hypothetical and should not be treated as predictions.
       </p>
       <ExpertBanner />
     </div>
