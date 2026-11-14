@@ -278,8 +278,7 @@ export function FieldSelector() {
         </p>
       )}
       <p className="caption inset">
-        Draw, edit or remove a polygon with the map tools. Its centroid selects one NASA climate
-        grid cell; the boundary is not a satellite measurement.
+        Draw, edit or remove a polygon with the map tools. Point-based NASA data represents the selected centroid coordinates, not measurements across every point of the field.
       </p>
     </section>
   )
