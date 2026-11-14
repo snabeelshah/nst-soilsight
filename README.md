@@ -72,7 +72,7 @@ Allow these HTTPS hosts in the cloud environment’s network settings:
 | Purpose                  | Hosts                                                                              |
 | ------------------------ | ---------------------------------------------------------------------------------- |
 | NASA climate and history | `power.larc.nasa.gov`                                                              |
-| Soil estimates           | `rest.soilgrids.org`                                                               |
+| Soil estimates           | `rest.isric.org`                                                                   |
 | NASA imagery             | `gibs.earthdata.nasa.gov`                                                          |
 | Street tiles             | `a.tile.openstreetmap.org`, `b.tile.openstreetmap.org`, `c.tile.openstreetmap.org` |
 | Location lookup          | `nominatim.openstreetmap.org`                                                      |

@@ -10,7 +10,12 @@ import { buildIrrigationPlan } from '../src/lib/irrigationPlanner'
 import { generateFallback } from '../src/api/nasa-power'
 import { getFallbackSoil } from '../src/api/soilgrids'
 import { monthRange } from '../src/lib/climate'
-import { createField, demoField, formatCoordinates } from '../src/lib/geometry'
+import {
+  createField,
+  demoField,
+  formatCoordinates,
+  getFieldScaleWarning,
+} from '../src/lib/geometry'
 import { buildRiskCalendar } from '../src/lib/riskCalendar'
 import { generateActionPlan } from '../src/lib/actionPlan'
 import { useAppStore, DEFAULT_PRIORITIES } from '../src/store/useAppStore'
@@ -47,6 +52,23 @@ describe('field geometry', () => {
         { lat: 2, lng: 179 },
       ]),
     ).toThrow('date line')
+  })
+  it('rejects regional polygons and warns before a field approaches grid scale', () => {
+    expect(() =>
+      createField([
+        { lat: 0, lng: 0 },
+        { lat: 0, lng: 0.7 },
+        { lat: 0.2, lng: 0.7 },
+        { lat: 0.2, lng: 0 },
+      ]),
+    ).toThrow('too large for farm-scale analysis')
+    const largeFarm = createField([
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.1 },
+      { lat: 0.1, lng: 0.1 },
+      { lat: 0.1, lng: 0 },
+    ])
+    expect(getFieldScaleWarning(largeFarm)).toContain('unusually large farm boundary')
   })
   it('formats southern and western coordinates correctly', () =>
     expect(formatCoordinates(-30, -60)).toBe('30.0000°S, 60.0000°W'))

@@ -2,7 +2,7 @@
 
 ## Geography
 
-Spherical area uses radius 6,371,008.8 m and the polygon’s latitude/longitude vertices; acres = hectares × 2.47105381. The centroid is a planar polygon centroid in locally translated coordinates, suitable for small farm boundaries. Very large polygons, concave centroids outside the polygon, poles beyond ±85° and date-line-crossing fields are limitations; date-line crossings and degenerate boundaries are rejected. NASA requests use the centroid rounded to four decimal places. The app does not perform spatial averaging over the polygon or within-field analysis.
+Spherical area uses radius 6,371,008.8 m and the polygon’s latitude/longitude vertices; acres = hectares × 2.47105381. The centroid is a planar polygon centroid in locally translated coordinates, suitable for small farm boundaries. Date-line crossings, degenerate boundaries, polygons above 25,000 hectares and polygons wider than one NASA POWER meteorological grid dimension (0.5° latitude or 0.625° longitude) are rejected. A warning appears above 5,000 hectares or half a grid dimension. NASA requests use the visibly marked centroid rounded to four decimal places. The app does not perform spatial averaging over the polygon or within-field analysis. Starting a new location search clears the previous boundary and its results so old data cannot be mistaken for the new place. A newly drawn or edited boundary must also be confirmed as one farm or managed field before live data can be loaded; this is a user declaration, not automated land-use verification.
 
 ## NASA POWER
 
@@ -54,7 +54,7 @@ Add the same temperature delta to all monthly temperatures; multiply rain by `1 
 
 ## Soil and risk
 
-SoilGrids queries repeat the `property` and `depth` parameters for the standard 0–5, 5–15 and 15–30 cm layers. A thickness-weighted mean is converted with the API's unit conversion factors. Texture g/kg is converted to percent; pH/10, SOC/10 (g/kg), CEC/10 (cmol(c)/kg), nitrogen/100 (g/kg). Missing values are rejected. The fallback is a bundled example JSON, not a guessed soil profile at the selected coordinates. SoilGrids is provided by ISRIC, not NASA.
+SoilGrids queries use the canonical ISRIC REST endpoint at `rest.isric.org` and repeat the `property` and `depth` parameters for the standard 0–5, 5–15 and 15–30 cm layers. A thickness-weighted mean is converted with the API's unit conversion factors. Texture g/kg is converted to percent; pH/10, SOC/10 (g/kg), CEC/10 (cmol(c)/kg), nitrogen/100 (g/kg). Missing values are rejected. The fallback is a bundled example JSON, not a guessed soil profile at the selected coordinates. SoilGrids is provided by ISRIC, not NASA.
 
 Risk thresholds are explicit in the app and code. They screen cold, heat, rainfall deficit and excess precipitation. A low signal does not establish safety; monthly averages hide extremes. Monthly precipitation cannot predict flooding or establish soil field capacity. These outputs are planning attention levels, not alerts.
 

@@ -7,7 +7,7 @@ const api = async (page: import('@playwright/test').Page) => {
     if (url.includes('power.larc.nasa.gov/api/temporal/daily/'))
       return route.fulfill({ json: recentClimateResponse() })
     if (url.includes('power.larc.nasa.gov')) return route.fulfill({ json: climateResponse() })
-    if (url.includes('rest.soilgrids.org')) return route.fulfill({ json: soilResponse() })
+    if (url.includes('rest.isric.org')) return route.fulfill({ json: soilResponse() })
     return route.abort()
   })
 }
@@ -26,6 +26,9 @@ test('demo provenance, all views, priorities, stress and exported evidence', asy
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await expect(page.getByText('Demo mode.', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Confirm farm boundary')).toBeChecked()
+  await expect(page.locator('.nasa-query-point')).toHaveCount(1)
+  await expect(page.getByText('NASA query point', { exact: true })).toBeVisible()
   await expect(
     page.getByRole('heading', { name: 'A clearer view of your next growing season.' }),
   ).toBeVisible()
@@ -72,6 +75,10 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
 }) => {
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('Example boundary retained; live NASA climate loaded for its centre point.'),
+  ).toBeVisible()
+  await expect(page.getByText('synthetic climate loaded', { exact: false })).toHaveCount(0)
   await page.getByRole('button', { name: 'NASA climate', exact: true }).click()
   await expect(page.getByText('14 mm', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'Field overview', exact: true }).click()
@@ -81,6 +88,9 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
   await page.getByRole('button', { name: 'Crop planner', exact: true }).click()
   await expect(page.getByText('Your field comes first')).toBeVisible()
   await page.getByRole('button', { name: 'Field overview', exact: true }).click()
+  await page.getByLabel('Search location or coordinates').fill('36.7468, -119.7726')
+  await page.getByRole('button', { name: 'Locate', exact: true }).click()
+  await expect(page.getByText('Location found.', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'Draw', exact: true }).click()
   const map = await page.locator('.field-map').boundingBox()
   expect(map).toBeTruthy()
@@ -98,9 +108,62 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
     await page.mouse.click(x + dx, y + dy)
   }
   await expect(page.getByText('Boundary saved.', { exact: false })).toBeVisible()
+  await expect(page.getByLabel('Confirm farm boundary')).not.toBeChecked()
+  await page.getByLabel('Confirm farm boundary').check()
   await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
+})
+
+test('searching a new place clears the previous field and prevents stale results', async ({
+  page,
+}) => {
+  await page.getByLabel('Search location or coordinates').fill('40, -105')
+  await page.getByRole('button', { name: 'Locate', exact: true }).click()
+  await expect(
+    page.getByText('The previous field and results were cleared.', { exact: false }),
+  ).toBeVisible()
+  await expect(page.getByText('Demo mode.', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.nasa-query-point')).toHaveCount(0)
+  await expect(page.getByText('Draw a polygon to begin.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+})
+
+test('rejects a region-sized polygon before requesting data', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Draw', exact: true }).click()
+  const map = await page.locator('.field-map').boundingBox()
+  expect(map).toBeTruthy()
+  const x = map!.x + 220,
+    y = map!.y + 100
+  for (const [dx, dy] of [
+    [0, 0],
+    [140, 0],
+    [140, 100],
+    [0, 100],
+    [0, 0],
+  ]) {
+    await page.waitForTimeout(75)
+    await page.mouse.click(x + dx, y + dy)
+  }
+  await expect(page.getByText('too large for farm-scale analysis', { exact: false })).toBeVisible()
+  await expect(page.getByText('Draw a polygon to begin.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+})
+
+test('uses a supported NASA imagery tile matrix and reports overlay failures separately', async ({
+  page,
+}) => {
+  let requestedTile = ''
+  await page.route('https://gibs.earthdata.nasa.gov/**', async (route) => {
+    requestedTile = route.request().url()
+    await route.abort('failed')
+  })
+  await page.getByRole('button', { name: 'NASA imagery', exact: false }).click()
+  await expect.poll(() => requestedTile).toContain('GoogleMapsCompatible_Level8')
+  expect(requestedTile).not.toContain('GoogleMapsCompatible_Level9')
+  await expect(page.getByText('NASA imagery is unavailable.', { exact: false })).toBeVisible()
+  await expect(page.getByText('Street map tiles are unavailable.', { exact: false })).toHaveCount(0)
 })
 test('failed services and invalid imports do not fabricate successful data', async ({ page }) => {
   await page.route('https://power.larc.nasa.gov/**', (route) =>
@@ -190,9 +253,7 @@ test('valid imports remain labelled and recompute the dashboard', async ({ page 
 test('complete NASA history is calculated and soil service failures are labelled', async ({
   page,
 }) => {
-  await page.route('https://rest.soilgrids.org/**', (route) =>
-    route.fulfill({ status: 503, body: '' }),
-  )
+  await page.route('https://rest.isric.org/**', (route) => route.fulfill({ status: 503, body: '' }))
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
   await expect(page.getByText('SoilGrids is unavailable.', { exact: false })).toBeVisible()

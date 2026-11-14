@@ -47,7 +47,7 @@ interface State {
   existingRotation: ExistingRotationEntry[]
   setField: (f: FieldPolygon | null, name?: string) => void
   loadDemo: (lat: number, lon: number, name: string) => void
-  fetchData: () => Promise<void>
+  fetchData: () => Promise<boolean>
   importData: (d: NASAClimateData) => void
   setActiveTab: (t: string) => void
   setLanguage: (l: 'en' | 'ur') => void
@@ -131,7 +131,7 @@ export const useAppStore = create<State>((set, get) => {
     },
     fetchData: async () => {
       const field = get().field
-      if (!field) return
+      if (!field) return false
       cancel()
       controller = new AbortController()
       const id = requestId,
@@ -142,7 +142,7 @@ export const useAppStore = create<State>((set, get) => {
         fetchSoilData(field.center.lat, field.center.lng, signal),
         fetchNASARecentData(field.center.lat, field.center.lng, signal),
       ])
-      if (signal.aborted || id !== requestId) return
+      if (signal.aborted || id !== requestId) return false
       if (climate.status === 'rejected') {
         set({
           loading: false,
@@ -150,7 +150,7 @@ export const useAppStore = create<State>((set, get) => {
           error:
             'NASA climate data could not be loaded. Check your connection or try again. Any existing results keep their original data label.',
         })
-        return
+        return false
       }
       const soilData = soil.status === 'fulfilled' ? soil.value : getFallbackSoil()
       set({
@@ -162,13 +162,14 @@ export const useAppStore = create<State>((set, get) => {
         recentLoading: false,
         soilError:
           soil.status === 'rejected'
-            ? 'SoilGrids is unavailable. An example soil profile is shown; soil suitability uses a neutral score.'
+            ? 'SoilGrids is unavailable. Climate remains live when labelled NASA POWER, but the soil values shown are bundled examples—not local data. Soil suitability uses a neutral 60/100.'
             : null,
         recentError:
           recent.status === 'rejected'
             ? 'Latest NASA POWER daily data are unavailable. The long-term climate plan remains available.'
             : null,
       })
+      return true
     },
     importData: (nasaData) => {
       cancel()

@@ -72,14 +72,23 @@ export async function fetchSoilData(
   for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
     params.append('property', p)
   for (const d of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', d)
-  const url = `https://rest.soilgrids.org/soilgrids/v2.0/properties/query?${params}`
-  const response = await fetch(url, {
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(20000)])
-      : AbortSignal.timeout(20000),
-  })
-  if (!response.ok) throw new Error(`SoilGrids returned HTTP ${response.status}.`)
-  return parseSoilGrids(await response.json(), url)
+  const url = `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`
+  const proxyUrl = `/api/soilgrids?lat=${encodeURIComponent(lat.toFixed(4))}&lon=${encodeURIComponent(lon.toFixed(4))}`
+  const request = async (requestUrl: string, timeout: number) => {
+    const response = await fetch(requestUrl, {
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeout)])
+        : AbortSignal.timeout(timeout),
+    })
+    if (!response.ok) throw new Error(`SoilGrids returned HTTP ${response.status}.`)
+    return response.json()
+  }
+  try {
+    return parseSoilGrids(await request(proxyUrl, 2000), url)
+  } catch (proxyError) {
+    if (signal?.aborted) throw proxyError
+    return parseSoilGrids(await request(url, 8000), url)
+  }
 }
 export function getFallbackSoil(): SoilData {
   return {
