@@ -119,6 +119,7 @@ export interface RotationStrategy {
   scores: FarmerPriorities & { overall: number }
   explanation: string
   benefits: string[]
+  risks?: string[]
   gaps: string[]
   expertReviewNeeded: boolean
   expertReviewReason: string
@@ -128,4 +129,9 @@ export interface RotationStrategy {
 export interface ClimateScenario {
   tempDelta: number
   rainfallDelta: number
+}
+export interface AnnualPoint {
+  year: number
+  rainfall: number
+  temp: number
 }

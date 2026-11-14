@@ -11,7 +11,8 @@ import {
 } from 'recharts'
 import { useAppStore } from '../store/useAppStore'
 import { buildRiskCalendar } from '../lib/riskCalendar'
-import { analyzeHistoricalTrends, type analyzeSeries } from '../lib/historicalTrends'
+import { type analyzeSeries } from '../lib/historicalTrends'
+import { fetchHistoricalTrends } from '../api/backend'
 import { MONTHS } from '../lib/climate'
 import { CROPS } from '../lib/cropDatabase'
 import { EmptyState, ExpertBanner, PanelTitle, Metric, SourceNote, number } from './ui'
@@ -285,9 +286,16 @@ export function HistoricalTrends() {
     if (!field || !run) return
     const controller = new AbortController()
     setLoading(true)
-    analyzeHistoricalTrends(field.center.lat, field.center.lng, controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setAnalysis(data)
+    fetchHistoricalTrends(field.center.lat, field.center.lng, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted)
+          setAnalysis({
+            data: res.series,
+            rainfallTrendSlope: res.rainfallSlope,
+            tempTrendSlope: res.tempSlope,
+            anomalyYears: res.rainfallAnomalies,
+            mean: res.meanRainfall,
+          })
       })
       .catch(() => {
         if (!controller.signal.aborted)
