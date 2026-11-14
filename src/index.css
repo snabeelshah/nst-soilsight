@@ -28,6 +28,25 @@
 body {
   margin: 0;
 }
+.startup-error {
+  width: min(560px, calc(100% - 32px));
+  margin: 12vh auto;
+  padding: 32px;
+  color: #314d39;
+  border: 1px solid #d4dfca;
+  border-radius: 14px;
+  background: #fffef9;
+  box-shadow: 0 16px 45px rgba(54, 82, 43, 0.1);
+}
+.startup-error h1 {
+  margin: 0 0 10px;
+  font-family: Georgia, serif;
+}
+.startup-error p {
+  margin: 0 0 20px;
+  color: #65705f;
+  line-height: 1.6;
+}
 button,
 input,
 select {
