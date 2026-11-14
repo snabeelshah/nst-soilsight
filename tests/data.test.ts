@@ -6,7 +6,7 @@ import {
   parseNASARecent,
   generateFallback,
 } from '../src/api/nasa-power'
-import { parseSoilGrids, getFallbackSoil } from '../src/api/soilgrids'
+import { parseSoilGrids, getFallbackSoil, fetchSoilData } from '../src/api/soilgrids'
 import { estimateET0, monthRange } from '../src/lib/climate'
 import { parseClimateImport } from '../src/lib/importData'
 import { climateResponse, recentClimateResponse, soilResponse } from './fixtures'
@@ -149,6 +149,23 @@ describe('SoilGrids profiles', () => {
     const data = soilResponse()
     data.properties.layers.pop()
     expect(() => parseSoilGrids(data)).toThrow('missing')
+  })
+  it('uses the same-origin proxy before making a direct provider request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(soilResponse()))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchSoilData(30, 71)).resolves.toMatchObject({ source: 'soilgrids' })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/soilgrids?lat=30.0000&lon=71.0000')
+  })
+  it('falls back to the public provider when the proxy is unavailable', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 502 }))
+      .mockResolvedValueOnce(Response.json(soilResponse()))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchSoilData(30, 71)).resolves.toMatchObject({ source: 'soilgrids' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toContain('https://rest.soilgrids.org/')
   })
 })
 describe('climate imports', () => {

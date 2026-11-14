@@ -72,6 +72,10 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
 }) => {
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('Example boundary retained; live NASA climate loaded for its centre point.'),
+  ).toBeVisible()
+  await expect(page.getByText('synthetic climate loaded', { exact: false })).toHaveCount(0)
   await page.getByRole('button', { name: 'NASA climate', exact: true }).click()
   await expect(page.getByText('14 mm', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: 'Field overview', exact: true }).click()
@@ -101,6 +105,21 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
   await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
+})
+
+test('uses a supported NASA imagery tile matrix and reports overlay failures separately', async ({
+  page,
+}) => {
+  let requestedTile = ''
+  await page.route('https://gibs.earthdata.nasa.gov/**', async (route) => {
+    requestedTile = route.request().url()
+    await route.abort('failed')
+  })
+  await page.getByRole('button', { name: 'NASA imagery', exact: false }).click()
+  await expect.poll(() => requestedTile).toContain('GoogleMapsCompatible_Level8')
+  expect(requestedTile).not.toContain('GoogleMapsCompatible_Level9')
+  await expect(page.getByText('NASA imagery is unavailable.', { exact: false })).toBeVisible()
+  await expect(page.getByText('Street map tiles are unavailable.', { exact: false })).toHaveCount(0)
 })
 test('failed services and invalid imports do not fabricate successful data', async ({ page }) => {
   await page.route('https://power.larc.nasa.gov/**', (route) =>

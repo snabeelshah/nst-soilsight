@@ -14,7 +14,7 @@ export function FieldSelector() {
   const searchController = useRef<AbortController | null>(null)
   const { field, loading, setField, fetchData, loadDemo } = useAppStore()
   const [layer, setLayer] = useState<'osm' | 'satellite'>('osm'),
-    [tileError, setTileError] = useState(false)
+    [tileErrors, setTileErrors] = useState({ osm: false, satellite: false })
   const [query, setQuery] = useState(''),
     [searching, setSearching] = useState(false),
     [message, setMessage] = useState('')
@@ -33,11 +33,13 @@ export function FieldSelector() {
         '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     })
     const satellite = L.tileLayer(
-      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_SurfaceReflectance_Bands143/default/2024-05-01/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg',
-      { maxNativeZoom: 9, maxZoom: 19, attribution: 'NASA GIBS · MODIS Terra · 1 May 2024' },
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_SurfaceReflectance_Bands143/default/2024-05-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg',
+      { maxNativeZoom: 8, maxZoom: 19, attribution: 'NASA GIBS · MODIS Terra · 1 May 2024' },
     )
-    osm.on('tileerror', () => setTileError(true))
-    satellite.on('tileerror', () => setTileError(true))
+    osm.on('tileerror', () => setTileErrors((errors) => ({ ...errors, osm: true })))
+    osm.on('tileload', () => setTileErrors((errors) => ({ ...errors, osm: false })))
+    satellite.on('tileerror', () => setTileErrors((errors) => ({ ...errors, satellite: true })))
+    satellite.on('tileload', () => setTileErrors((errors) => ({ ...errors, satellite: false })))
     osm.addTo(map)
     layers.current = { osm, satellite }
     const drawn = new L.FeatureGroup().addTo(map)
@@ -113,7 +115,17 @@ export function FieldSelector() {
     mapRef.current.removeLayer(layers.current[layer])
     layers.current[next].addTo(mapRef.current)
     setLayer(next)
-    setTileError(false)
+    setTileErrors((errors) => ({ ...errors, [next]: false }))
+  }
+  const loadLiveData = async () => {
+    const replacedDemoClimate = useAppStore.getState().nasaData?.kind === 'demo'
+    const loaded = await fetchData()
+    if (!loaded || useAppStore.getState().nasaData?.kind !== 'live') return
+    setMessage(
+      replacedDemoClimate
+        ? 'Example boundary retained; live NASA climate loaded for its centre point.'
+        : 'Live NASA climate loaded for this boundary.',
+    )
   }
   const locate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -214,9 +226,11 @@ export function FieldSelector() {
           className="field-map"
           aria-label="Interactive map: use drawing tools to select a field"
         />
-        {tileError && (
+        {tileErrors[layer] && (
           <div className="map-notice" role="status">
-            Map tiles unavailable. Boundary drawing and demo calculations still work.
+            {layer === 'satellite'
+              ? 'NASA imagery is unavailable. Switch to Street view; boundary drawing and calculations still work.'
+              : 'Street map tiles are unavailable. Boundary drawing and calculations still work.'}
           </div>
         )}
       </div>
@@ -264,7 +278,7 @@ export function FieldSelector() {
           </button>
           <button
             className="btn primary"
-            onClick={() => void fetchData()}
+            onClick={() => void loadLiveData()}
             disabled={!field || loading}
           >
             <RefreshCw size={15} className={loading ? 'spin' : ''} />
