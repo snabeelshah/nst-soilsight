@@ -1,6 +1,6 @@
 # SoilSight
 
-**Earth data. Farm wisdom.** An explainable farm-planning prototype for the NASA Space Apps challenge. Draw a field, request NASA POWER climate, compare three crop rotations, change priorities, and explore climate sensitivity. The app runs entirely in the browser.
+**Earth data. Farm wisdom.** An explainable farm-planning prototype for the NASA Space Apps challenge. Draw a field, request NASA POWER climate, compare three crop rotations, change priorities, and explore climate sensitivity. Public-data features run in the browser; authenticated Earthdata products use a small server boundary so credentials never enter the browser bundle.
 
 ## Run locally
 
@@ -8,6 +8,12 @@ Use Node.js 24 LTS (22.12+ also satisfies the toolchain).
 
 ```sh
 npm ci
+npm run server
+```
+
+In a second terminal:
+
+```sh
 npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
 ```
 
@@ -20,14 +26,24 @@ npm run preview
 
 Playwright uses `/usr/bin/chromium` when available. Otherwise run `npx playwright install --with-deps chromium` first. Tests use a separate Vite server on port 4173; stop another process on that port before testing. GitHub Actions runs the checks and browser tests on every push and pull request.
 
-A static host can serve `dist/` after `npm run build`; no backend, environment variable or API secret is needed. This repository does not include a deployment or a Gemini integration. Never put a Gemini key in a `VITE_*` variable: browser bundles expose it.
+A static host can still serve the existing public POWER, SoilGrids and map experience from `dist/`. Authenticated SMAP, GPM, SRTM and ECOSTRESS work will require deploying the `server/` routes or equivalent serverless functions. This repository does not include a Gemini integration. Never put Earthdata or Gemini credentials in a `VITE_*` variable: browser bundles expose them.
+
+## NASA Earthdata setup
+
+1. Create a NASA Earthdata Login and generate a bearer token.
+2. Copy `.env.example` to `.env` locally.
+3. Set `EARTHDATA_TOKEN` in `.env` or in the hosting platform's server-side secret manager.
+4. Run `npm run server`, then request `http://127.0.0.1:3001/api/earthdata/status` to confirm configuration.
+
+Do not paste the token into source code, chat, screenshots or GitHub. The initial server route reports only whether a token is configured; GPM and SMAP product adapters are the next implementation step.
 
 ## What works
 
 - Leaflet field drawing, rectangle selection, boundary editing/deletion, spherical area and centroid. Changes invalidate old results and abort obsolete requests.
 - Location lookup through Nominatim, or offline latitude/longitude positioning. Search moves the map; it never invents a farm boundary.
 - NASA POWER climatology: temperature, precipitation, root/profile soil wetness, source links and provenance. Invalid/fill values do not become plausible climate data.
-- Three heuristic plans: Baseline, Soil-first and Water-saver. Annual candidates are evaluated over all twelve possible starting months, using seasonal rather than whole-year suitability.
+- Latest available NASA POWER daily context: seven- and thirty-day rainfall, daily mean temperature and land-surface wetness. It is explicitly not labelled real-time weather or a forecast.
+- Three comparable plans: an editable farmer-entered current rotation, Soil-first and Water-saver. Alternative annual candidates are evaluated over all twelve possible starting months, using seasonal rather than whole-year suitability.
 - Six priority sliders, normalized weights, live ranking and visible score contributions. All-zero weights produce an equal-weight comparison.
 - A twelve-month climate risk calendar. Thresholds are visible; it does not issue forecasts or flood alerts.
 - Monthly irrigation estimates inside the planner. The same calculation drives every displayed water gap and export.
@@ -41,7 +57,7 @@ A static host can serve `dist/` after `npm run build`; no backend, environment v
 
 ## Data honesty
 
-The initial Punjab example uses **synthetic demonstration climate**, not NASA observations. Selecting a demo location is always an explicit demo operation. Click **Load NASA data** to request real modelled climate for the selected field. A failed request never upgrades demo data to live data; existing results keep their provenance label. Editing or clearing the field removes old calculations immediately.
+The app opens without a selected field or calculated results. Choosing a demo location is an explicit operation and loads **synthetic demonstration climate**, not NASA observations. Click **Load NASA data** after drawing a field to request real modelled climate for its centre. A failed request never upgrades demo data to live data; existing results keep their provenance label. Editing or clearing the field removes old calculations immediately.
 
 - **Observed:** reserved for documented direct measurements; the app currently makes no field-observation claim.
 - **Modelled:** live NASA POWER reanalysis, regional grid data, not a field sensor or weather forecast.
@@ -76,6 +92,12 @@ month,tempMin,tempMax,tempAvg,rainfall
 ```
 
 The file must contain exactly **12 distinct months**, 1 through 12. Temperatures are °C; rainfall is **mm per month**. Optional `soilMoistureRoot` and `soilMoistureProf` values are dimensionless 0–1. JSON may include `lat` and `lon`; if present they must match the selected field within 0.01°. Derived totals and ET₀ are recalculated, never trusted from the file. Maximum file size: 1 MB. This normalized format is not the raw NASA CSV format, and imports are labelled as unverified estimates.
+
+## Challenge-resource alignment
+
+The official Field Shift resource list includes NASA POWER, SMAP, GPM IMERG, MODIS, Landsat/HLS, ECOSTRESS, GRACE/GRACE-FO, SRTM and GEDI. SoilSight uses NASA POWER as its core quantitative source and MODIS through NASA GIBS as a contextual map layer. The Sources & methods view identifies every other resource as a future evidence layer; the app never implies that an unimplemented dataset affects a score. SoilGrids and the illustrative crop library are complementary non-NASA inputs.
+
+The comparison includes the farmer's current rotation, as requested by the challenge. The opening current rotation is demo input and must be replaced with the farmer's actual crops and approximate sowing months before interpreting the comparison.
 
 ## Challenge demonstration
 

@@ -16,7 +16,14 @@ import { MONTHS } from '../lib/climate'
 import { CROPS } from '../lib/cropDatabase'
 import { EmptyState, ExpertBanner, PanelTitle, Metric, SourceNote, number } from './ui'
 export function NASADashboard() {
-  const { nasaData: nasa, fetchData, loading } = useAppStore()
+  const {
+    nasaData: nasa,
+    recentData: recent,
+    recentError,
+    recentLoading,
+    fetchData,
+    loading,
+  } = useAppStore()
   if (!nasa) return <EmptyState />
   const wettest = [...nasa.monthly].sort((a, b) => b.rainfall - a.rainfall)[0]
   const driest = [...nasa.monthly].sort((a, b) => a.rainfall - b.rainfall)[0]
@@ -33,6 +40,58 @@ export function NASADashboard() {
         }
       />
       <SourceNote />
+      <section className="panel padded">
+        <div className="panel-heading">
+          <div>
+            <span className="eyebrow">LATEST AVAILABLE / NOT A FORECAST</span>
+            <h3>Recent regional conditions</h3>
+          </div>
+          {recent?.sourceUrl && (
+            <a className="text-link" href={recent.sourceUrl} target="_blank" rel="noreferrer">
+              Open daily source <ExternalLink size={14} />
+            </a>
+          )}
+        </div>
+        {recentLoading ? (
+          <p className="caption" role="status">Loading the latest complete NASA POWER days…</p>
+        ) : recent ? (
+          <>
+            <div className="metrics-grid">
+              <Metric
+                label={`Latest temperature · ${recent.latest.date}`}
+                value={`${number(recent.latest.tempAvg, 1)}°C`}
+                detail="Regional daily mean"
+              />
+              <Metric
+                label="Rainfall · last 7 available days"
+                value={`${number(recent.rainfall7Days, 1)} mm`}
+                detail={`7-day mean temperature ${number(recent.avgTemp7Days, 1)}°C`}
+              />
+              <Metric
+                label="Rainfall · last 30 available days"
+                value={`${number(recent.rainfall30Days, 1)} mm`}
+                detail={recent.period}
+              />
+              <Metric
+                label="Latest root wetness"
+                value={recent.latest.soilMoistureRoot?.toFixed(2) ?? 'Unavailable'}
+                detail="Dimensionless model index · 0–1"
+              />
+            </div>
+            <p className="caption">
+              {recent.confidence.label}. {recent.confidence.description} Recent values provide
+              context only; the crop rotations continue to use the long-term climatology below.
+            </p>
+          </>
+        ) : (
+          <p className="caption" role={recentError ? 'alert' : undefined}>
+            {recentError ??
+              (nasa.kind === 'demo'
+                ? 'Demo workspaces do not claim recent NASA conditions. Draw a field and load NASA data.'
+                : 'No recent daily record is loaded.')}
+          </p>
+        )}
+      </section>
       <div className="metrics-grid">
         <Metric
           label="Rainfall / year"
@@ -464,17 +523,60 @@ export function Methodology() {
           season names. Perennials are excluded from annual rotations.
         </p>
         <p>
-          The baseline favours fit and an illustrative market index. Soil-first favours legumes and
-          organic matter traits. Water-saver favours low water gaps and drought tolerance. A greedy
-          selection chooses up to three different crop families without overlap. This is not a
-          globally optimal agronomic plan. Under constrained conditions strategies can converge or
-          contain no feasible crop.
+          The current-practice plan uses the crops and sowing months entered by the farmer and is
+          scored without optimizing them. Soil-first favours legumes and organic matter traits.
+          Water-saver favours low water gaps and drought tolerance. For the two alternatives, a
+          greedy selection chooses up to three different crop families without overlap. This is not
+          a globally optimal agronomic plan. Under constrained conditions alternatives can converge
+          or contain no feasible crop.
         </p>
         <p>
           Criterion scores combine seasonal suitability with crop traits, estimated water deficits
           and planned coverage. Your displayed total is the weighted sum of those six scores, with
           equal weights if all sliders are zero. No score is a yield probability, actual carbon
           gain, local market price or guaranteed water saving.
+        </p>
+      </section>
+      <section className="panel padded">
+        <h3>Official challenge resource alignment</h3>
+        <p>
+          The Field Shift resource list offers several NASA datasets. SoilSight deliberately starts
+          with the browser-accessible sources needed for a defensible prototype and identifies the
+          others as future evidence layers rather than implying they are already integrated.
+        </p>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>NASA resource</th>
+                <th>Decision evidence</th>
+                <th>SoilSight status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ['NASA POWER', 'Temperature, rainfall and land-surface wetness', 'Core live API'],
+                ['MODIS via GIBS', 'Regional satellite-image context', 'Map layer; not scored'],
+                ['SMAP', 'Satellite soil moisture since 2015', 'Future validation layer'],
+                ['GPM IMERG', 'Higher-resolution precipitation', 'Future rainfall refinement'],
+                ['Landsat / HLS', 'Field cover and vegetation change', 'Future field-history layer'],
+                ['ECOSTRESS', 'Plant temperature and water stress', 'Future stress validation'],
+                ['GRACE / GRACE-FO', 'Regional groundwater-storage trends', 'Future water context'],
+                ['SRTM', 'Elevation and slope', 'Future erosion-risk input'],
+                ['GEDI', 'Vegetation structure', 'Optional landscape context'],
+              ].map(([resource, evidence, status]) => (
+                <tr key={resource}>
+                  <th>{resource}</th>
+                  <td>{evidence}</td>
+                  <td>{status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="caption">
+          NASA POWER is regional gridded model data, not a field sensor. SoilGrids and crop profiles
+          are complementary non-NASA inputs and remain explicitly labelled as estimates.
         </p>
       </section>
       <section className="panel padded">
@@ -519,10 +621,20 @@ export function Methodology() {
           {[
             ['NASA POWER API & methodology', 'https://power.larc.nasa.gov/docs/services/api/'],
             ['NASA GIBS imagery documentation', 'https://nasa-gibs.github.io/gibs-api-docs/'],
+            ['NASA SMAP data', 'https://smap.jpl.nasa.gov/data/'],
+            ['NASA GPM data', 'https://gpm.nasa.gov/data'],
+            ['NASA Harmonized Landsat Sentinel-2', 'https://www.earthdata.nasa.gov/data/projects/hls'],
+            ['NASA ECOSTRESS', 'https://ecostress.jpl.nasa.gov/'],
+            ['NASA GRACE data', 'https://grace.jpl.nasa.gov/data/'],
+            ['NASA SRTM', 'https://www.earthdata.nasa.gov/data/instruments/srtm'],
+            ['NASA GEDI products', 'https://gedi.umd.edu/data/products/'],
             ['ISRIC SoilGrids documentation', 'https://docs.isric.org/globaldata/soilgrids/'],
             ['FAO-56 crop evapotranspiration', 'https://www.fao.org/4/x0490e/x0490e00.htm'],
             ['FAO EcoCrop data context', 'https://gaez.fao.org/pages/ecocrop'],
-            ['NASA Space Apps', 'https://www.spaceappschallenge.org/'],
+            [
+              'Field Shift official resources',
+              'https://www.spaceappschallenge.org/2026/challenges/adapting-farms-with-nasa-data/?tab=resources',
+            ],
           ].map(([name, href]) => (
             <a key={href} href={href} target="_blank" rel="noreferrer">
               {name}

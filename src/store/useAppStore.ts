@@ -6,10 +6,12 @@ import type {
   RotationStrategy,
   FarmerPriorities,
   ClimateScenario,
+  ExistingRotationEntry,
+  NASARecentData,
 } from '../types'
 import { buildRotationStrategies, rankStrategies, applyClimateStress } from '../lib/cropScoring'
 import { demoField } from '../lib/geometry'
-import { fetchNASAClimateData, generateFallback } from '../api/nasa-power'
+import { fetchNASAClimateData, fetchNASARecentData, generateFallback } from '../api/nasa-power'
 import { fetchSoilData, getFallbackSoil } from '../api/soilgrids'
 export const DEFAULT_PRIORITIES: FarmerPriorities = {
   waterConservation: 25,
@@ -20,20 +22,29 @@ export const DEFAULT_PRIORITIES: FarmerPriorities = {
   riskReduction: 5,
 }
 export const DEFAULT_SCENARIO: ClimateScenario = { tempDelta: 0, rainfallDelta: 0 }
+export const DEFAULT_EXISTING_ROTATION: ExistingRotationEntry[] = [
+  { cropId: 'wheat', monthStart: 11 },
+  { cropId: 'mungbean', monthStart: 4 },
+  { cropId: 'sorghum', monthStart: 7 },
+]
 interface State {
   field: FieldPolygon | null
   fieldName: string
   nasaData: NASAClimateData | null
   soilData: SoilData | null
+  recentData: NASARecentData | null
   loading: boolean
+  recentLoading: boolean
   error: string | null
   soilError: string | null
+  recentError: string | null
   activeTab: string
   language: 'en' | 'ur'
   priorities: FarmerPriorities
   climateScenario: ClimateScenario
   rankedStrategies: RotationStrategy[]
   stressedStrategies: RotationStrategy[]
+  existingRotation: ExistingRotationEntry[]
   setField: (f: FieldPolygon | null, name?: string) => void
   loadDemo: (lat: number, lon: number, name: string) => void
   fetchData: () => Promise<void>
@@ -42,16 +53,14 @@ interface State {
   setLanguage: (l: 'en' | 'ur') => void
   updatePriorities: (p: FarmerPriorities) => void
   updateClimateScenario: (s: ClimateScenario) => void
+  updateExistingRotation: (rotation: ExistingRotationEntry[]) => void
 }
 let controller: AbortController | undefined
 let requestId = 0
-const initialClimate = generateFallback(30.1575, 71.5249),
-  initialSoil = getFallbackSoil()
-const initialStrategies = buildRotationStrategies(initialClimate, initialSoil, DEFAULT_PRIORITIES)
 export const useAppStore = create<State>((set, get) => {
   const calculate = (nasa: NASAClimateData, soil: SoilData | null) => {
-    const { priorities, climateScenario } = get()
-    const rankedStrategies = buildRotationStrategies(nasa, soil, priorities)
+    const { priorities, climateScenario, existingRotation } = get()
+    const rankedStrategies = buildRotationStrategies(nasa, soil, priorities, existingRotation)
     return {
       rankedStrategies,
       stressedStrategies: applyClimateStress(
@@ -68,19 +77,23 @@ export const useAppStore = create<State>((set, get) => {
     requestId++
   }
   return {
-    field: demoField(30.1575, 71.5249),
-    fieldName: 'Punjab, Pakistan',
-    nasaData: initialClimate,
-    soilData: initialSoil,
+    field: null,
+    fieldName: '',
+    nasaData: null,
+    soilData: null,
+    recentData: null,
     loading: false,
+    recentLoading: false,
     error: null,
     soilError: null,
+    recentError: null,
     activeTab: 'overview',
     language: 'en',
     priorities: DEFAULT_PRIORITIES,
     climateScenario: DEFAULT_SCENARIO,
-    rankedStrategies: initialStrategies,
-    stressedStrategies: initialStrategies,
+    rankedStrategies: [],
+    stressedStrategies: [],
+    existingRotation: DEFAULT_EXISTING_ROTATION,
     setField: (field, name = 'My field') => {
       cancel()
       set({
@@ -88,11 +101,14 @@ export const useAppStore = create<State>((set, get) => {
         fieldName: name,
         nasaData: null,
         soilData: null,
+        recentData: null,
         rankedStrategies: [],
         stressedStrategies: [],
         loading: false,
+        recentLoading: false,
         error: null,
         soilError: null,
+        recentError: null,
       })
     },
     loadDemo: (lat, lon, fieldName) => {
@@ -104,10 +120,13 @@ export const useAppStore = create<State>((set, get) => {
         fieldName,
         nasaData,
         soilData,
+        recentData: null,
         ...calculate(nasaData, soilData),
         loading: false,
+        recentLoading: false,
         error: null,
         soilError: null,
+        recentError: null,
       })
     },
     fetchData: async () => {
@@ -117,15 +136,17 @@ export const useAppStore = create<State>((set, get) => {
       controller = new AbortController()
       const id = requestId,
         signal = controller.signal
-      set({ loading: true, error: null, soilError: null })
-      const [climate, soil] = await Promise.allSettled([
+      set({ loading: true, recentLoading: true, error: null, soilError: null, recentError: null })
+      const [climate, soil, recent] = await Promise.allSettled([
         fetchNASAClimateData(field.center.lat, field.center.lng, signal),
         fetchSoilData(field.center.lat, field.center.lng, signal),
+        fetchNASARecentData(field.center.lat, field.center.lng, signal),
       ])
       if (signal.aborted || id !== requestId) return
       if (climate.status === 'rejected') {
         set({
           loading: false,
+          recentLoading: false,
           error:
             'NASA climate data could not be loaded. Check your connection or try again. Any existing results keep their original data label.',
         })
@@ -135,18 +156,33 @@ export const useAppStore = create<State>((set, get) => {
       set({
         nasaData: climate.value,
         soilData,
+        recentData: recent.status === 'fulfilled' ? recent.value : null,
         ...calculate(climate.value, soilData),
         loading: false,
+        recentLoading: false,
         soilError:
           soil.status === 'rejected'
             ? 'SoilGrids is unavailable. An example soil profile is shown; soil suitability uses a neutral score.'
+            : null,
+        recentError:
+          recent.status === 'rejected'
+            ? 'Latest NASA POWER daily data are unavailable. The long-term climate plan remains available.'
             : null,
       })
     },
     importData: (nasaData) => {
       cancel()
       const soilData = get().soilData ?? getFallbackSoil()
-      set({ nasaData, soilData, ...calculate(nasaData, soilData), loading: false, error: null })
+      set({
+        nasaData,
+        soilData,
+        recentData: null,
+        ...calculate(nasaData, soilData),
+        loading: false,
+        recentLoading: false,
+        error: null,
+        recentError: null,
+      })
     },
     setActiveTab: (activeTab) => set({ activeTab }),
     setLanguage: (language) => {
@@ -172,6 +208,27 @@ export const useAppStore = create<State>((set, get) => {
         stressedStrategies: nasaData
           ? applyClimateStress(rankedStrategies, nasaData, climateScenario, soilData, priorities)
           : [],
+      })
+    },
+    updateExistingRotation: (existingRotation) => {
+      const { nasaData, soilData, priorities, climateScenario } = get()
+      if (!nasaData) return set({ existingRotation })
+      const rankedStrategies = buildRotationStrategies(
+        nasaData,
+        soilData,
+        priorities,
+        existingRotation,
+      )
+      set({
+        existingRotation,
+        rankedStrategies,
+        stressedStrategies: applyClimateStress(
+          rankedStrategies,
+          nasaData,
+          climateScenario,
+          soilData,
+          priorities,
+        ),
       })
     },
   }

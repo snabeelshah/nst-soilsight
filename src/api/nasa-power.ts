@@ -1,4 +1,4 @@
-import type { NASAClimateData, NASAMonthlyData } from '../types'
+import type { NASAClimateData, NASAMonthlyData, NASARecentData, NASARecentDay } from '../types'
 import { DAYS, MONTHS, estimateET0, summarizeClimate } from '../lib/climate'
 const BASE = 'https://power.larc.nasa.gov/api/temporal'
 type Parameters = Record<string, Record<string, number>>
@@ -104,6 +104,94 @@ export async function fetchNASAClimateData(
   })
   const url = `${BASE}/climatology/point?${params}`
   return parseNASAClimate(await request(url, signal), lat, lon, url)
+}
+function isoDate(key: string): string {
+  return `${key.slice(0, 4)}-${key.slice(4, 6)}-${key.slice(6, 8)}`
+}
+export function parseNASARecent(data: PowerResponse, sourceUrl: string): NASARecentData {
+  const props = data.properties?.parameter
+  if (!props) throw new Error('NASA returned no recent daily parameters.')
+  const rainUnits = data.parameters?.PRECTOTCORR?.units
+  if (rainUnits && !['mm/day', 'mm day-1', 'mm/d'].includes(rainUnits))
+    throw new Error(`Unsupported NASA daily precipitation units: ${rainUnits}`)
+  const fill = data.header?.fill_value ?? -999
+  const keys = Object.keys(props.T2M ?? {})
+    .filter((key) => /^\d{8}$/.test(key))
+    .sort()
+  const days: NASARecentDay[] = keys.flatMap((key) => {
+    const tempAvg = props.T2M?.[key]
+    const rainfall = props.PRECTOTCORR?.[key]
+    if (
+      !valid(tempAvg) ||
+      !valid(rainfall) ||
+      [tempAvg, rainfall].includes(fill) ||
+      tempAvg < -90 ||
+      tempAvg > 65 ||
+      rainfall < 0 ||
+      rainfall > 1000
+    )
+      return []
+    const moisture = (parameter: string) => {
+      const value = props[parameter]?.[key]
+      return valid(value) && value !== fill && value >= 0 && value <= 1 ? value : null
+    }
+    return [
+      {
+        date: isoDate(key),
+        tempAvg,
+        rainfall,
+        soilMoistureRoot: moisture('GWETROOT'),
+        soilMoistureProf: moisture('GWETPROF'),
+      },
+    ]
+  })
+  if (days.length < 7)
+    throw new Error('NASA returned fewer than seven complete recent days. No substitute was used.')
+  const last7 = days.slice(-7),
+    last30 = days.slice(-30),
+    latest = days[days.length - 1]
+  return {
+    days,
+    latest,
+    rainfall7Days: last7.reduce((sum, day) => sum + day.rainfall, 0),
+    rainfall30Days: last30.reduce((sum, day) => sum + day.rainfall, 0),
+    avgTemp7Days: last7.reduce((sum, day) => sum + day.tempAvg, 0) / last7.length,
+    source: 'NASA POWER daily point data',
+    sourceUrl,
+    retrievedAt: new Date().toISOString(),
+    period: `${days[0].date}–${latest.date}`,
+    confidence: {
+      level: 'modelled',
+      label: 'Modelled · latest available NASA POWER',
+      description:
+        'Latest complete regional daily values returned by NASA POWER. These are not a field sensor, a real-time weather feed or a forecast.',
+      color: '#326b8a',
+    },
+  }
+}
+function yyyymmdd(date: Date): string {
+  return date.toISOString().slice(0, 10).replace(/-/g, '')
+}
+export async function fetchNASARecentData(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<NASARecentData> {
+  const end = new Date()
+  end.setUTCDate(end.getUTCDate() - 2)
+  const start = new Date(end)
+  start.setUTCDate(start.getUTCDate() - 44)
+  const params = new URLSearchParams({
+    parameters: 'T2M,PRECTOTCORR,GWETROOT,GWETPROF',
+    community: 'AG',
+    longitude: lon.toFixed(4),
+    latitude: lat.toFixed(4),
+    start: yyyymmdd(start),
+    end: yyyymmdd(end),
+    format: 'JSON',
+  })
+  const url = `${BASE}/daily/point?${params}`
+  return parseNASARecent(await request(url, signal), url)
 }
 // An explicit demonstration model. Never returned automatically when a live request fails.
 export function generateFallback(lat: number, lon: number): NASAClimateData {

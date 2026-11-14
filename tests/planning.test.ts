@@ -14,7 +14,7 @@ import { createField, demoField, formatCoordinates } from '../src/lib/geometry'
 import { buildRiskCalendar } from '../src/lib/riskCalendar'
 import { generateActionPlan } from '../src/lib/actionPlan'
 import { useAppStore, DEFAULT_PRIORITIES } from '../src/store/useAppStore'
-import { climateResponse, soilResponse } from './fixtures'
+import { climateResponse, recentClimateResponse, soilResponse } from './fixtures'
 import { answerQuestion } from '../src/lib/advisor'
 const nasa = generateFallback(30, 71),
   soil = getFallbackSoil()
@@ -102,6 +102,21 @@ describe('rotation planning and scoring', () => {
     for (const r of ranked) expect(r.scores.overall).toBe(r.scores.marketValue)
     expect(ranked[0].scores.overall).toBeGreaterThanOrEqual(ranked[1].scores.overall)
     expect(JSON.stringify(original)).toBe(snapshot)
+  })
+  it('evaluates the farmer-entered rotation without replacing its crops or sowing months', () => {
+    const entered = [
+      { cropId: 'wheat', monthStart: 11 },
+      { cropId: 'mungbean', monthStart: 4 },
+    ]
+    const current = buildRotationStrategies(nasa, soil, DEFAULT_PRIORITIES, entered).find(
+      (plan) => plan.type === 'baseline',
+    )!
+    expect(current.name).toBe("Farmer's current rotation")
+    expect(current.crops.map((crop) => [crop.crop.id, crop.monthStart])).toEqual([
+      ['wheat', 11],
+      ['mungbean', 4],
+    ])
+    expect(current.gaps[0]).toContain('user-entered current practice')
   })
   it('uses equal weights for all-zero priorities', () => {
     const weights = normalizedWeights(
@@ -198,6 +213,7 @@ describe('request ownership', () => {
     useAppStore.getState().setField(demoField(-30, -60))
     resolvers[0](Response.json(climateResponse()))
     resolvers[1](Response.json(soilResponse()))
+    resolvers[2](Response.json(recentClimateResponse()))
     await pending
     expect(useAppStore.getState().nasaData).toBeNull()
     expect(useAppStore.getState().field!.center.lat).toBeCloseTo(-30)

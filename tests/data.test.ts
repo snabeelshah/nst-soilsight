@@ -3,12 +3,13 @@ import {
   parseNASAClimate,
   parseMonthlyHistory,
   fetchNASAClimateData,
+  parseNASARecent,
   generateFallback,
 } from '../src/api/nasa-power'
 import { parseSoilGrids, getFallbackSoil } from '../src/api/soilgrids'
 import { estimateET0, monthRange } from '../src/lib/climate'
 import { parseClimateImport } from '../src/lib/importData'
-import { climateResponse, soilResponse } from './fixtures'
+import { climateResponse, recentClimateResponse, soilResponse } from './fixtures'
 import { analyzeSeries } from '../src/lib/historicalTrends'
 afterEach(() => vi.unstubAllGlobals())
 describe('NASA response validation and units', () => {
@@ -57,6 +58,17 @@ describe('NASA response validation and units', () => {
   it('propagates service failures instead of returning synthetic NASA data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 503 })))
     await expect(fetchNASAClimateData(30, 71)).rejects.toThrow('503')
+  })
+  it('summarizes the latest complete daily POWER records without inventing missing values', () => {
+    const response = recentClimateResponse()
+    response.properties.parameter.T2M['20261005'] = -999
+    const recent = parseNASARecent(response, 'https://power.example/daily')
+    expect(recent.latest.date).toBe('2026-10-04')
+    expect(recent.rainfall7Days).toBe(14)
+    expect(recent.rainfall30Days).toBe(60)
+    expect(recent.avgTemp7Days).toBe(24)
+    expect(recent.latest.soilMoistureRoot).toBe(0.42)
+    expect(recent.confidence.level).toBe('modelled')
   })
   it('converts daily means in monthly history, including leap years', () => {
     const records = Object.fromEntries(

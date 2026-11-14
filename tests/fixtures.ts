@@ -21,6 +21,25 @@ export function climateResponse() {
     },
   }
 }
+export function recentClimateResponse() {
+  const keys = Array.from({ length: 35 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 8, 1 + index))
+    return date.toISOString().slice(0, 10).replaceAll('-', '')
+  })
+  const series = (value: number) => Object.fromEntries(keys.map((key) => [key, value]))
+  return {
+    header: { start: keys[0], end: keys.at(-1), fill_value: -999 },
+    parameters: { PRECTOTCORR: { units: 'mm/day' } },
+    properties: {
+      parameter: {
+        T2M: series(24),
+        PRECTOTCORR: series(2),
+        GWETROOT: series(0.42),
+        GWETPROF: series(0.51),
+      },
+    },
+  }
+}
 export function soilResponse() {
   const values: Record<string, [number, number]> = {
     phh2o: [65, 10],

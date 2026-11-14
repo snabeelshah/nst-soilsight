@@ -6,6 +6,7 @@ import { MONTHS, monthRange } from '../lib/climate'
 import { buildIrrigationPlan } from '../lib/irrigationPlanner'
 import { generateActionPlan } from '../lib/actionPlan'
 import type { FarmerPriorities, RotationStrategy } from '../types'
+import { CROPS } from '../lib/cropDatabase'
 import { EmptyState, ExpertBanner, PanelTitle, Metric, SourceNote, number } from './ui'
 export const CRITERIA: Record<keyof FarmerPriorities, { label: string; ur: string; help: string }> =
   {
@@ -183,16 +184,71 @@ function StrategyCard({ strategy, rank }: { strategy: RotationStrategy; rank: nu
   )
 }
 export function CropPlanner() {
-  const { nasaData, rankedStrategies } = useAppStore()
+  const { nasaData, rankedStrategies, existingRotation, updateExistingRotation } = useAppStore()
   if (!nasaData) return <EmptyState />
+  const annualCrops = CROPS.filter((crop) => crop.id !== 'fallow' && crop.season !== 'perennial')
   return (
     <div className="view-stack">
       <PanelTitle
         number="PLAN / COMPARE THE TRADE-OFFS"
-        title="Three ways to grow forward"
-        description="The same field. Three approaches. Your priorities decide the ranking."
+        title="Current practice versus two alternatives"
+        description="Compare the farmer's existing rotation with Soil-first and Water-saver plans. Your priorities decide the ranking."
       />
       <SourceNote />
+      <section className="panel current-rotation-editor">
+        <div>
+          <span className="eyebrow">CHALLENGE BASELINE / FARMER INPUT</span>
+          <h3>Describe the current rotation</h3>
+          <p className="caption">
+            Demo rotations are clearly labelled. Replace them with the farmer's real crops and
+            approximate sowing months before presenting a recommendation.
+          </p>
+        </div>
+        <div className="rotation-input-grid">
+          {existingRotation.map((entry, index) => (
+            <div className="rotation-input" key={index}>
+              <label htmlFor={`existing-crop-${index}`}>Crop {index + 1}</label>
+              <select
+                id={`existing-crop-${index}`}
+                value={entry.cropId}
+                onChange={(event) =>
+                  updateExistingRotation(
+                    existingRotation.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, cropId: event.target.value } : item,
+                    ),
+                  )
+                }
+              >
+                {annualCrops.map((crop) => (
+                  <option key={crop.id} value={crop.id}>
+                    {crop.name}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor={`existing-month-${index}`}>Sowing month</label>
+              <select
+                id={`existing-month-${index}`}
+                value={entry.monthStart}
+                onChange={(event) =>
+                  updateExistingRotation(
+                    existingRotation.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, monthStart: Number(event.target.value) }
+                        : item,
+                    ),
+                  )
+                }
+              >
+                {MONTHS.map((month, monthIndex) => (
+                  <option key={month} value={monthIndex + 1}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      </section>
       <div className="planner-layout">
         <Priorities />
         <div className="strategy-grid" aria-live="polite">
