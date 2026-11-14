@@ -749,27 +749,129 @@ main {
   font-size: 12px;
   color: #555e4a;
 }
-.overview-grid {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 20px;
-}
 .field-panel {
   overflow: hidden;
+  border-color: #cedbc3;
+  box-shadow: 0 14px 35px rgba(54, 82, 43, 0.07);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+  scroll-margin-top: 90px;
+}
+.field-panel:hover {
+  border-color: #afc49e;
+  box-shadow: 0 18px 44px rgba(54, 82, 43, 0.11);
 }
 .field-panel > .panel-heading {
-  padding: 20px 20px 0;
+  padding: 24px 24px 0;
+  align-items: flex-start;
+}
+.field-intro {
+  max-width: 620px;
+  margin-top: 8px;
+  color: #66705c;
+  font-size: 11px;
+  line-height: 1.65;
 }
 .field-panel select {
-  max-width: 170px;
+  max-width: 210px;
+  font-size: 11px;
+  border-color: #ccd8c2;
+  background-color: #f8faf4;
+  cursor: pointer;
+}
+.field-progress {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 24px 18px;
+}
+.field-progress button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px 14px;
+  text-align: left;
+  color: #697363;
+  border: 1px solid #e1e7da;
+  border-radius: 10px;
+  background: #fbfcf7;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.field-progress button:not(:disabled):hover {
+  transform: translateY(-2px);
+  border-color: #b8c9aa;
+  box-shadow: 0 8px 20px rgba(58, 81, 45, 0.08);
+}
+.field-progress button.active {
+  color: #2f563c;
+  border-color: #9fb990;
+  background: #eef4e8;
+  box-shadow: inset 0 0 0 1px rgba(111, 145, 91, 0.12);
+}
+.field-progress button.done {
+  color: #47633f;
+  border-color: #d5e0cc;
+  background: #f3f7ee;
+}
+.field-progress button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.field-progress button > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.field-progress strong {
+  color: inherit;
+  font-size: 11px;
+}
+.field-progress small {
+  overflow: hidden;
+  color: #5f6958;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.step-index {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  color: #5f6c58;
+  border: 1px solid #d2dbc9;
+  border-radius: 50%;
+  background: white;
   font-size: 10px;
+  font-weight: 700;
+}
+.field-progress .active .step-index {
+  color: white;
+  border-color: #416b4e;
+  background: #416b4e;
+  box-shadow: 0 0 0 4px rgba(78, 117, 82, 0.1);
+}
+.field-progress .done .step-index {
+  color: #3f6c48;
+  border-color: #bdd1b0;
+  background: #e4eedc;
 }
 .map-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 0 20px 14px;
+  padding: 0 24px 16px;
 }
 .map-toolbar form {
   display: flex;
@@ -806,7 +908,7 @@ main {
   isolation: isolate;
 }
 .field-map {
-  height: 330px;
+  height: 410px;
   background: #e4e9d9 !important;
   font-family: inherit;
 }
@@ -818,6 +920,22 @@ main {
 }
 .leaflet-control-attribution {
   font-size: 8px !important;
+}
+.nasa-query-point {
+  filter: drop-shadow(0 2px 4px rgba(68, 49, 30, 0.35));
+}
+.nasa-query-label {
+  color: #543c27;
+  border: 1px solid #d8b891;
+  border-radius: 5px;
+  background: #fffaf0;
+  box-shadow: 0 3px 10px rgba(68, 49, 30, 0.13);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 650;
+}
+.nasa-query-label:before {
+  border-top-color: #d8b891;
 }
 .map-notice {
   position: absolute;
@@ -833,7 +951,7 @@ main {
   pointer-events: none;
 }
 .map-footer {
-  padding: 14px 20px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -841,6 +959,32 @@ main {
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
   background: #fcfdf8;
+}
+.field-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 24px;
+  color: #5f6858;
+  border-top: 1px solid var(--border);
+  background: #f7f9f3;
+  font-size: 10px;
+  line-height: 1.55;
+  cursor: pointer;
+}
+.field-confirmation input {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: #3f694d;
+}
+.field-confirmation span {
+  display: flex;
+  flex-direction: column;
+}
+.field-confirmation strong {
+  color: #36513b;
+  font-size: 11px;
 }
 .map-footer strong {
   font-size: 15px;
@@ -863,10 +1007,23 @@ main {
   padding-bottom: 10px;
   font-size: 10px;
 }
+.field-scale-warning {
+  margin: 0 20px 10px;
+  padding: 10px 12px;
+  color: #7b5428;
+  border: 1px solid #e5cba8;
+  border-radius: 7px;
+  background: #fbf2e5;
+  font-size: 10px;
+  line-height: 1.6;
+}
 .seasonal-card {
   padding: 20px 22px;
   display: flex;
   flex-direction: column;
+}
+.overview-seasonal .chart {
+  height: 320px;
 }
 .seasonal-card .inset {
   padding-inline: 0;
@@ -1772,9 +1929,6 @@ dialog p {
   .strategy-card details ul {
     font-size: 11px;
   }
-  .overview-grid {
-    grid-template-columns: 1.2fr 1fr;
-  }
   .map-footer .button-row {
     gap: 5px;
   }
@@ -1801,9 +1955,6 @@ dialog p {
   }
   .hero h1 {
     font-size: 37px;
-  }
-  .overview-grid {
-    grid-template-columns: 1fr;
   }
   .seasonal-card .chart {
     height: 260px;
@@ -2015,6 +2166,17 @@ dialog p {
   .field-panel > .panel-heading {
     padding: 17px 15px 0;
     flex-wrap: wrap;
+  }
+  .field-panel > .panel-heading select {
+    width: 100%;
+    max-width: none;
+  }
+  .field-progress {
+    grid-template-columns: 1fr;
+    padding: 0 15px 15px;
+  }
+  .field-progress button {
+    padding: 10px 12px;
   }
   .map-toolbar {
     padding-inline: 15px;

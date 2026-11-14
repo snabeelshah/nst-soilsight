@@ -165,7 +165,7 @@ describe('SoilGrids profiles', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(fetchSoilData(30, 71)).resolves.toMatchObject({ source: 'soilgrids' })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls[1][0]).toContain('https://rest.soilgrids.org/')
+    expect(fetchMock.mock.calls[1][0]).toContain('https://rest.isric.org/')
   })
 })
 describe('climate imports', () => {

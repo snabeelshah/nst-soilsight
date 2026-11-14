@@ -1,4 +1,34 @@
 import type { FieldPolygon, LatLng } from '../types'
+export const POWER_GRID_LAT_DEGREES = 0.5
+export const POWER_GRID_LNG_DEGREES = 0.625
+export const MAX_FIELD_AREA_HECTARES = 25_000
+export const FIELD_SCALE_WARNING_HECTARES = 5_000
+function fieldBounds(coordinates: LatLng[]) {
+  const latitudes = coordinates.map((point) => point.lat)
+  const longitudes = coordinates.map((point) => point.lng)
+  return {
+    latSpan: Math.max(...latitudes) - Math.min(...latitudes),
+    lngSpan: Math.max(...longitudes) - Math.min(...longitudes),
+  }
+}
+export function supportsFieldScale(field: FieldPolygon): boolean {
+  const { latSpan, lngSpan } = fieldBounds(field.coordinates)
+  return (
+    field.areaHectares <= MAX_FIELD_AREA_HECTARES &&
+    latSpan <= POWER_GRID_LAT_DEGREES &&
+    lngSpan <= POWER_GRID_LNG_DEGREES
+  )
+}
+export function getFieldScaleWarning(field: FieldPolygon): string | null {
+  const { latSpan, lngSpan } = fieldBounds(field.coordinates)
+  if (
+    field.areaHectares >= FIELD_SCALE_WARNING_HECTARES ||
+    latSpan >= POWER_GRID_LAT_DEGREES / 2 ||
+    lngSpan >= POWER_GRID_LNG_DEGREES / 2
+  )
+    return 'This is an unusually large farm boundary. NASA POWER still represents only the marked centre grid cell, so conditions may vary across the polygon.'
+  return null
+}
 export function createField(coordinates: LatLng[]): FieldPolygon {
   if (
     coordinates.length < 3 ||
@@ -64,7 +94,7 @@ export function createField(coordinates: LatLng[]): FieldPolygon {
   const areaHectares = Math.abs((spherical * 6371008.8 ** 2) / 2) / 10000
   if (!Number.isFinite(areaHectares) || areaHectares < 0.001 || Math.abs(twiceArea) < 1e-12)
     throw new Error('This boundary has no measurable area. Draw a larger polygon.')
-  return {
+  const field = {
     coordinates,
     center: {
       lat: origin.lat + latSum / (3 * twiceArea),
@@ -73,6 +103,11 @@ export function createField(coordinates: LatLng[]): FieldPolygon {
     areaHectares,
     areaAcres: areaHectares * 2.47105381,
   }
+  if (!supportsFieldScale(field))
+    throw new Error(
+      'This boundary is too large for farm-scale analysis. Draw a smaller field within one NASA POWER grid-cell dimension (about 0.5° × 0.625° and under 25,000 ha).',
+    )
+  return field
 }
 export function demoField(lat: number, lon: number) {
   const dLat = 0.0022,

@@ -62,7 +62,7 @@ const server = createServer(async (request, response) => {
     for (const depth of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', depth)
     try {
       const upstream = await fetch(
-        `https://rest.soilgrids.org/soilgrids/v2.0/properties/query?${params}`,
+        `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`,
         { signal: AbortSignal.timeout(8000) },
       )
       if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)

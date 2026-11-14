@@ -162,7 +162,7 @@ export const useAppStore = create<State>((set, get) => {
         recentLoading: false,
         soilError:
           soil.status === 'rejected'
-            ? 'SoilGrids is unavailable. An example soil profile is shown; soil suitability uses a neutral score.'
+            ? 'SoilGrids is unavailable. Climate remains live when labelled NASA POWER, but the soil values shown are bundled examples—not local data. Soil suitability uses a neutral 60/100.'
             : null,
         recentError:
           recent.status === 'rejected'

@@ -4,6 +4,7 @@ import { useAppStore, DEFAULT_PRIORITIES, DEFAULT_SCENARIO } from '../store/useA
 import { normalizedWeights, PRIORITY_KEYS } from '../lib/cropScoring'
 import { MONTHS, monthRange } from '../lib/climate'
 import { buildIrrigationPlan } from '../lib/irrigationPlanner'
+import { supportsFieldScale } from '../lib/geometry'
 import { generateActionPlan } from '../lib/actionPlan'
 import type { FarmerPriorities, RotationStrategy } from '../types'
 import { CROPS } from '../lib/cropDatabase'
@@ -269,6 +270,7 @@ export function IrrigationPlanner() {
   if (!nasaData || !strategy) return null
   const plan = buildIrrigationPlan(nasaData.monthly, strategy.crops)
   const total = plan.reduce((s, m) => s + m.waterGap, 0)
+  const volumeSupported = Boolean(field && supportsFieldScale(field))
   return (
     <section className="panel irrigation">
       <PanelTitle
@@ -302,15 +304,21 @@ export function IrrigationPlanner() {
         <Metric
           label="Equivalent field volume"
           value={
-            field ? (
+            field && volumeSupported ? (
               <>
                 {number(total * field.areaHectares * 10)} <em>m³</em>
               </>
+            ) : field ? (
+              'Not calculated'
             ) : (
               '—'
             )
           }
-          detail="1 mm over 1 hectare = 10 m³; delivery losses excluded"
+          detail={
+            field && !volumeSupported
+              ? 'Boundary exceeds the supported farm scale; regional volume is intentionally disabled.'
+              : '1 mm over 1 hectare = 10 m³; delivery losses excluded'
+          }
         />
       </div>
       <div className="table-scroll">

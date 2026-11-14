@@ -19,6 +19,7 @@ export function Overview() {
     nasaData: nasa,
     soilData: soil,
     rankedStrategies,
+    field,
     fieldName,
     setActiveTab,
     language,
@@ -53,8 +54,19 @@ export function Overview() {
               ? 'اپنا کھیت منتخب کریں، موسمی خطرات سمجھیں اور اپنی ترجیحات کے مطابق فصلوں کا موازنہ کریں۔'
               : 'Understand your land. Explore the trade-offs. Build a crop plan around what matters to you.'}
           </p>
-          <button className="btn primary" onClick={() => setActiveTab('crops')}>
-            Explore your crop plans <ArrowUpRight size={17} />
+          <button
+            className="btn primary"
+            onClick={() => {
+              if (nasa) setActiveTab('crops')
+              else document.getElementById('field-selector')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+          >
+            {nasa
+              ? 'Explore your crop plans'
+              : field
+                ? 'Continue field setup'
+                : 'Choose your field'}{' '}
+            <ArrowUpRight size={17} />
           </button>
         </div>
         <div className="hero-art" aria-hidden="true">
@@ -87,6 +99,7 @@ export function Overview() {
           </span>
         </div>
       </section>
+      <FieldSelector />
       <div className="section-label">
         <h2>
           {fieldName || 'Your field'} <span className="muted">/ season overview</span>
@@ -149,98 +162,90 @@ export function Overview() {
           detail={soil?.confidence.label ?? 'No soil profile'}
         />
       </div>
-      <div className="overview-grid">
-        <FieldSelector />
-        <section className="panel seasonal-card">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">02 / CLIMATE SIGNALS</span>
-              <h2>Your year, at a glance</h2>
-            </div>
+      <section className="panel seasonal-card overview-seasonal">
+        <div className="panel-heading">
+          <div>
+            <span className="eyebrow">02 / CLIMATE SIGNALS</span>
+            <h2>Your year, at a glance</h2>
           </div>
-          {nasa ? (
-            <>
-              <div className="chart-legend">
-                <span>
-                  <i className="rain-dot" /> Rainfall · mm
-                </span>
-                <span>
-                  <i className="temp-dot" /> Temperature · °C
-                </span>
-              </div>
-              <div
-                className="chart"
-                role="img"
-                aria-label="Monthly rainfall and mean temperature chart"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chart} margin={{ left: -20, right: -20, top: 15 }}>
-                    <CartesianGrid vertical={false} stroke="#e9ece4" />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      yAxisId="rain"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      yAxisId="temp"
-                      orientation="right"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: '#dbe3d3' }} />
-                    <Bar
-                      isAnimationActive={false}
-                      dataKey="rainfall"
-                      name="Rainfall (mm)"
-                      yAxisId="rain"
-                      fill="#adc5ad"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Line
-                      isAnimationActive={false}
-                      dataKey="temperature"
-                      name="Mean temperature (°C)"
-                      yAxisId="temp"
-                      stroke="#b57a3c"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="risk-strip">
-                {risks.map((r) => (
-                  <button
-                    key={r.month}
-                    title={`${r.monthName}: ${r.severity} attention`}
-                    onClick={() => setActiveTab('risk')}
-                  >
-                    <span>{r.monthName[0]}</span>
-                    <i className={r.severity} />
-                  </button>
-                ))}
-              </div>
-              <p className="caption inset">
-                Monthly risk signals · green low, amber medium, rust high
-              </p>
-              <SourceNote />
-              <button className="text-link inset" onClick={() => setActiveTab('nasa')}>
-                Explore climate & sources <ArrowRight size={14} />
-              </button>
-            </>
-          ) : (
-            <p className="inset muted">Load climate data to see the seasonal pattern.</p>
-          )}
-        </section>
-      </div>
+        </div>
+        {nasa ? (
+          <>
+            <div className="chart-legend">
+              <span>
+                <i className="rain-dot" /> Rainfall · mm
+              </span>
+              <span>
+                <i className="temp-dot" /> Temperature · °C
+              </span>
+            </div>
+            <div
+              className="chart"
+              role="img"
+              aria-label="Monthly rainfall and mean temperature chart"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chart} margin={{ left: -20, right: -20, top: 15 }}>
+                  <CartesianGrid vertical={false} stroke="#e9ece4" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis yAxisId="rain" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    yAxisId="temp"
+                    orientation="right"
+                    tick={{ fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: '#dbe3d3' }} />
+                  <Bar
+                    isAnimationActive={false}
+                    dataKey="rainfall"
+                    name="Rainfall (mm)"
+                    yAxisId="rain"
+                    fill="#adc5ad"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Line
+                    isAnimationActive={false}
+                    dataKey="temperature"
+                    name="Mean temperature (°C)"
+                    yAxisId="temp"
+                    stroke="#b57a3c"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="risk-strip">
+              {risks.map((r) => (
+                <button
+                  key={r.month}
+                  title={`${r.monthName}: ${r.severity} attention`}
+                  onClick={() => setActiveTab('risk')}
+                >
+                  <span>{r.monthName[0]}</span>
+                  <i className={r.severity} />
+                </button>
+              ))}
+            </div>
+            <p className="caption inset">
+              Monthly risk signals · green low, amber medium, rust high
+            </p>
+            <SourceNote />
+            <button className="text-link inset" onClick={() => setActiveTab('nasa')}>
+              Explore climate & sources <ArrowRight size={14} />
+            </button>
+          </>
+        ) : (
+          <p className="inset muted">Load climate data to see the seasonal pattern.</p>
+        )}
+      </section>
       <div className="next-grid">
         <button className="next-card" onClick={() => setActiveTab('crops')}>
           <Sprout size={22} />

@@ -72,7 +72,7 @@ export async function fetchSoilData(
   for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
     params.append('property', p)
   for (const d of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', d)
-  const url = `https://rest.soilgrids.org/soilgrids/v2.0/properties/query?${params}`
+  const url = `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`
   const proxyUrl = `/api/soilgrids?lat=${encodeURIComponent(lat.toFixed(4))}&lon=${encodeURIComponent(lon.toFixed(4))}`
   const request = async (requestUrl: string, timeout: number) => {
     const response = await fetch(requestUrl, {
