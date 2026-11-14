@@ -37,6 +37,25 @@ export interface NASAClimateData {
   retrievedAt?: string
   period: string
 }
+export interface NASARecentDay {
+  date: string
+  tempAvg: number
+  rainfall: number
+  soilMoistureRoot: number | null
+  soilMoistureProf: number | null
+}
+export interface NASARecentData {
+  days: NASARecentDay[]
+  latest: NASARecentDay
+  rainfall7Days: number
+  rainfall30Days: number
+  avgTemp7Days: number
+  confidence: DataConfidence
+  source: string
+  sourceUrl: string
+  retrievedAt: string
+  period: string
+}
 export interface SoilData {
   ph: number
   organicCarbon: number

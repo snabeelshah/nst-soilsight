@@ -200,8 +200,8 @@ export function CropPlanner() {
           <span className="eyebrow">CHALLENGE BASELINE / FARMER INPUT</span>
           <h3>Describe the current rotation</h3>
           <p className="caption">
-            The opening values are a clearly labelled Punjab demo. Replace them with the farmer's
-            real crops and approximate sowing months before presenting a recommendation.
+            Demo rotations are clearly labelled. Replace them with the farmer's real crops and
+            approximate sowing months before presenting a recommendation.
           </p>
         </div>
         <div className="rotation-input-grid">

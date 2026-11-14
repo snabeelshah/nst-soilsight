@@ -16,7 +16,14 @@ import { MONTHS } from '../lib/climate'
 import { CROPS } from '../lib/cropDatabase'
 import { EmptyState, ExpertBanner, PanelTitle, Metric, SourceNote, number } from './ui'
 export function NASADashboard() {
-  const { nasaData: nasa, fetchData, loading } = useAppStore()
+  const {
+    nasaData: nasa,
+    recentData: recent,
+    recentError,
+    recentLoading,
+    fetchData,
+    loading,
+  } = useAppStore()
   if (!nasa) return <EmptyState />
   const wettest = [...nasa.monthly].sort((a, b) => b.rainfall - a.rainfall)[0]
   const driest = [...nasa.monthly].sort((a, b) => a.rainfall - b.rainfall)[0]
@@ -33,6 +40,58 @@ export function NASADashboard() {
         }
       />
       <SourceNote />
+      <section className="panel padded">
+        <div className="panel-heading">
+          <div>
+            <span className="eyebrow">LATEST AVAILABLE / NOT A FORECAST</span>
+            <h3>Recent regional conditions</h3>
+          </div>
+          {recent?.sourceUrl && (
+            <a className="text-link" href={recent.sourceUrl} target="_blank" rel="noreferrer">
+              Open daily source <ExternalLink size={14} />
+            </a>
+          )}
+        </div>
+        {recentLoading ? (
+          <p className="caption" role="status">Loading the latest complete NASA POWER days…</p>
+        ) : recent ? (
+          <>
+            <div className="metrics-grid">
+              <Metric
+                label={`Latest temperature · ${recent.latest.date}`}
+                value={`${number(recent.latest.tempAvg, 1)}°C`}
+                detail="Regional daily mean"
+              />
+              <Metric
+                label="Rainfall · last 7 available days"
+                value={`${number(recent.rainfall7Days, 1)} mm`}
+                detail={`7-day mean temperature ${number(recent.avgTemp7Days, 1)}°C`}
+              />
+              <Metric
+                label="Rainfall · last 30 available days"
+                value={`${number(recent.rainfall30Days, 1)} mm`}
+                detail={recent.period}
+              />
+              <Metric
+                label="Latest root wetness"
+                value={recent.latest.soilMoistureRoot?.toFixed(2) ?? 'Unavailable'}
+                detail="Dimensionless model index · 0–1"
+              />
+            </div>
+            <p className="caption">
+              {recent.confidence.label}. {recent.confidence.description} Recent values provide
+              context only; the crop rotations continue to use the long-term climatology below.
+            </p>
+          </>
+        ) : (
+          <p className="caption" role={recentError ? 'alert' : undefined}>
+            {recentError ??
+              (nasa.kind === 'demo'
+                ? 'Demo workspaces do not claim recent NASA conditions. Draw a field and load NASA data.'
+                : 'No recent daily record is loaded.')}
+          </p>
+        )}
+      </section>
       <div className="metrics-grid">
         <Metric
           label="Rainfall / year"

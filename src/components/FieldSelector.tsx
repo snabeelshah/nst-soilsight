@@ -20,10 +20,10 @@ export function FieldSelector() {
     [message, setMessage] = useState('')
   useEffect(() => {
     if (!element.current) return
-    const initial = useAppStore.getState().field?.center ?? { lat: 30.1575, lng: 71.5249 }
+    const initial = useAppStore.getState().field?.center
     const map = L.map(element.current, {
-      center: [initial.lat, initial.lng],
-      zoom: 13,
+      center: initial ? [initial.lat, initial.lng] : [20, 0],
+      zoom: initial ? 13 : 2,
       scrollWheelZoom: false,
     })
     mapRef.current = map
@@ -82,7 +82,7 @@ export function FieldSelector() {
     )
     map.on(L.Draw.Event.DELETED, () => {
       setField(null)
-      setMessage('Boundary cleared. Draw a new field or choose a demo.')
+      setMessage('Boundary cleared. Search for a supported location and draw a new field.')
     })
     const resize = new ResizeObserver(() => map.invalidateSize())
     resize.observe(element.current)

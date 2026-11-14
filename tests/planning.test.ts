@@ -14,7 +14,7 @@ import { createField, demoField, formatCoordinates } from '../src/lib/geometry'
 import { buildRiskCalendar } from '../src/lib/riskCalendar'
 import { generateActionPlan } from '../src/lib/actionPlan'
 import { useAppStore, DEFAULT_PRIORITIES } from '../src/store/useAppStore'
-import { climateResponse, soilResponse } from './fixtures'
+import { climateResponse, recentClimateResponse, soilResponse } from './fixtures'
 import { answerQuestion } from '../src/lib/advisor'
 const nasa = generateFallback(30, 71),
   soil = getFallbackSoil()
@@ -213,6 +213,7 @@ describe('request ownership', () => {
     useAppStore.getState().setField(demoField(-30, -60))
     resolvers[0](Response.json(climateResponse()))
     resolvers[1](Response.json(soilResponse()))
+    resolvers[2](Response.json(recentClimateResponse()))
     await pending
     expect(useAppStore.getState().nasaData).toBeNull()
     expect(useAppStore.getState().field!.center.lat).toBeCloseTo(-30)

@@ -1,13 +1,5 @@
 export const DEMO_LOCATIONS = [
   {
-    name: 'Punjab, Pakistan',
-    nameUrdu: 'پنجاب، پاکستان',
-    lat: 30.1575,
-    lon: 71.5249,
-    zone: 'Indus Arid Basin',
-    icon: '🌾',
-  },
-  {
     name: 'Central Valley, USA',
     nameUrdu: 'سینٹرل ویلی، امریکہ',
     lat: 36.7468,

@@ -68,7 +68,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: boolean 
       <div className="panel empty-state" role="alert">
         <h2>This view could not load.</h2>
         <p>
-          Your repository and downloaded plans are unaffected. Reload to restore the demo workspace.
+          Your repository and downloaded plans are unaffected. Reload to return to the field selector.
         </p>
         <button className="btn primary" onClick={() => window.location.reload()}>
           Reload dashboard

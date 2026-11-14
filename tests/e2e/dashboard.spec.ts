@@ -1,9 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { climateResponse, soilResponse } from '../fixtures'
+import { climateResponse, recentClimateResponse, soilResponse } from '../fixtures'
 const api = async (page: import('@playwright/test').Page) => {
   // External services are mocked for deterministic tests; this does not validate live access.
   await page.route('https://**/*', (route) => {
     const url = route.request().url()
+    if (url.includes('power.larc.nasa.gov/api/temporal/daily/'))
+      return route.fulfill({ json: recentClimateResponse() })
     if (url.includes('power.larc.nasa.gov')) return route.fulfill({ json: climateResponse() })
     if (url.includes('rest.soilgrids.org')) return route.fulfill({ json: soilResponse() })
     return route.abort()
@@ -12,6 +14,13 @@ const api = async (page: import('@playwright/test').Page) => {
 test.beforeEach(async ({ page }) => {
   await api(page)
   await page.goto('/')
+  await page.getByLabel('Choose a demo location').selectOption('0')
+})
+test('opens without an assumed field or calculated data', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Draw a polygon to begin.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
+  await expect(page.getByText('Demo mode.', { exact: true })).toHaveCount(0)
 })
 test('demo provenance, all views, priorities, stress and exported evidence', async ({ page }) => {
   const errors: string[] = []
@@ -63,6 +72,9 @@ test('loads NASA data, clears stale data on boundary deletion and supports redra
 }) => {
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'NASA climate', exact: true }).click()
+  await expect(page.getByText('14 mm', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'Field overview', exact: true }).click()
   await expect(page.getByText('Demo mode.', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Clear field boundary' }).click()
   await expect(page.getByRole('button', { name: 'Load NASA data', exact: true })).toBeDisabled()
