@@ -61,18 +61,37 @@ const server = createServer(async (request, response) => {
       params.append('property', property)
     for (const depth of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', depth)
     try {
-      const upstream = await fetch(
-        `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`,
-        {
-          headers: {
-            Accept: 'application/json',
-            'User-Agent': 'SoilSight/1.0 (NASA Space Apps farm-planning prototype)',
-          },
-          signal: AbortSignal.timeout(20000),
-        },
-      )
-      if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)
-      sendJson(response, 200, await upstream.json())
+      const properties = ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen']
+      const depths = ['0-5cm', '5-15cm', '15-30cm']
+      const openEpiParams = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4) })
+      properties.forEach((property) => openEpiParams.append('properties', property))
+      depths.forEach((depth) => openEpiParams.append('depths', depth))
+      openEpiParams.append('values', 'mean')
+      const providers = [
+        ['ISRIC SoilGrids', `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`],
+        ['SoilGrids via OpenEPI', `https://api.openepi.io/soil/property?${openEpiParams}`],
+      ]
+      const failures = []
+      for (const [provider, providerUrl] of providers) {
+        try {
+          const upstream = await fetch(providerUrl, {
+            headers: {
+              Accept: 'application/json',
+              'User-Agent': 'SoilSight/1.0 (NASA Space Apps farm-planning prototype)',
+            },
+            signal: AbortSignal.timeout(20000),
+          })
+          if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)
+          const data = await upstream.json()
+          if (!Array.isArray(data?.properties?.layers)) throw new Error('incomplete response')
+          data._soilsight = { provider, sourceUrl: providerUrl }
+          sendJson(response, 200, data)
+          return
+        } catch (error) {
+          failures.push(`${provider}: ${error instanceof Error ? error.message : error}`)
+        }
+      }
+      throw new Error(failures.join(' | '))
     } catch (error) {
       console.error(
         'SoilGrids proxy request failed:',
