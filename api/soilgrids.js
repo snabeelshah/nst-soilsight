@@ -66,7 +66,11 @@ export default async function handler(request, response) {
     )
     return sendJson(response, 200, data)
   } catch (error) {
-    console.error('SoilGrids proxy request failed:', error instanceof Error ? error.message : error)
-    return sendJson(response, 502, { error: 'SoilGrids is currently unavailable.' })
+    const detail = error instanceof Error ? error.message : 'Unknown upstream failure.'
+    console.error('SoilGrids proxy request failed:', detail)
+    return sendJson(response, 502, {
+      error: 'SoilGrids is currently unavailable.',
+      detail,
+    })
   }
 }

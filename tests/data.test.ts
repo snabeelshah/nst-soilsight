@@ -145,6 +145,35 @@ describe('SoilGrids profiles', () => {
     data.properties.layers.find((l) => l.name === 'soc')!.depths[0].values.mean = 300
     expect(parseSoilGrids(data).organicCarbon).toBeCloseTo(15)
   })
+  it('uses available requested depths when one model depth is unavailable', () => {
+    const data = soilResponse()
+    const carbon = data.properties.layers.find((l) => l.name === 'soc')!
+    carbon.depths[0].values.mean = 300
+    carbon.depths[1].values.mean = null as unknown as number
+    carbon.depths[2].values.mean = 100
+    expect(parseSoilGrids(data).organicCarbon).toBeCloseTo(15)
+  })
+  it('normalizes independently modelled texture fractions', () => {
+    const data = soilResponse()
+    data.properties.layers
+      .find((l) => l.name === 'clay')!
+      .depths.forEach((d) => {
+        d.values.mean = 300
+      })
+    data.properties.layers
+      .find((l) => l.name === 'sand')!
+      .depths.forEach((d) => {
+        d.values.mean = 500
+      })
+    data.properties.layers
+      .find((l) => l.name === 'silt')!
+      .depths.forEach((d) => {
+        d.values.mean = 400
+      })
+    const soil = parseSoilGrids(data)
+    expect(soil.clay + soil.sand + soil.silt).toBeCloseTo(100)
+    expect(soil.clay).toBeCloseTo(25)
+  })
   it('rejects a partial soil profile instead of filling missing properties with zero', () => {
     const data = soilResponse()
     data.properties.layers.pop()
