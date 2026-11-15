@@ -32,8 +32,15 @@ export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData
     const coveredDepth = available.reduce((sum, sample) => sum + sample.weight, 0)
     return available.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / coveredDepth
   }
+  const optional = (name: string, divisor: number) => {
+    try {
+      return get(name, divisor)
+    } catch {
+      return null
+    }
+  }
   const ph = get('phh2o', 10),
-    organicCarbon = get('soc', 10),
+    organicCarbon = optional('soc', 10),
     rawTexture = {
       clay: get('clay', 10),
       sand: get('sand', 10),
@@ -58,8 +65,8 @@ export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData
     ph,
     organicCarbon,
     ...texture,
-    cec: get('cec', 10),
-    nitrogen: get('nitrogen', 100),
+    cec: optional('cec', 10),
+    nitrogen: optional('nitrogen', 100),
     textureClass:
       texture.clay >= 40
         ? 'Clay-rich'
@@ -73,7 +80,7 @@ export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData
     confidence: {
       level: 'estimated',
       label: 'Estimated · SoilGrids',
-      description: `250 m global soil predictions${data._soilsight?.provider ? ` delivered by ${data._soilsight.provider}` : ''}; available requested depths are thickness-weighted and texture fractions are normalized. Local soil testing is needed.`,
+      description: `250 m global soil predictions${data._soilsight?.provider ? ` delivered by ${data._soilsight.provider}` : ''}; available requested depths are thickness-weighted and texture fractions are normalized. Optional carbon, CEC or nitrogen values may be unavailable. Local soil testing is needed.`,
       color: '#776290',
     },
   }
@@ -85,10 +92,8 @@ export async function fetchSoilData(
 ): Promise<SoilData> {
   const params = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4), value: 'mean' })
   const openEpiParams = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4) })
-  for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
-    params.append('property', p)
-  for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
-    openEpiParams.append('properties', p)
+  for (const p of ['phh2o', 'clay', 'sand', 'silt']) params.append('property', p)
+  for (const p of ['phh2o', 'clay', 'sand', 'silt']) openEpiParams.append('properties', p)
   for (const d of ['0-5cm', '5-15cm', '15-30cm']) {
     params.append('depth', d)
     openEpiParams.append('depths', d)

@@ -37,7 +37,7 @@ export function generateActionPlan(
     steps,
     soilRecommendations: [
       soil?.source === 'soilgrids'
-        ? `Confirm the estimated pH of ${soil.ph.toFixed(1)} and organic carbon of ${soil.organicCarbon.toFixed(1)} g/kg with a lab test.`
+        ? `Confirm the estimated pH of ${soil.ph.toFixed(1)}${soil.organicCarbon === null ? '' : ` and organic carbon of ${soil.organicCarbon.toFixed(1)} g/kg`} with a lab test.`
         : 'Obtain a soil test before deciding on amendments.',
       'Discuss residue retention, cover crops and reduced tillage locally. Fertiliser doses cannot be inferred from this prototype.',
     ],

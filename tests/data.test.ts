@@ -134,16 +134,16 @@ describe('SoilGrids profiles', () => {
   it('converts texture, pH, carbon and nitrogen units', () => {
     const soil = parseSoilGrids(soilResponse())
     expect(soil.ph).toBeCloseTo(6.5)
-    expect(soil.organicCarbon).toBeCloseTo(12)
+    expect(soil.organicCarbon!).toBeCloseTo(12)
     expect(soil.clay).toBeCloseTo(25)
     expect(soil.sand).toBeCloseTo(40)
-    expect(soil.nitrogen).toBeCloseTo(1.2)
+    expect(soil.nitrogen!).toBeCloseTo(1.2)
     expect(soil.source).toBe('soilgrids')
   })
   it('weights standard depths by thickness, not by number of samples', () => {
     const data = soilResponse()
     data.properties.layers.find((l) => l.name === 'soc')!.depths[0].values.mean = 300
-    expect(parseSoilGrids(data).organicCarbon).toBeCloseTo(15)
+    expect(parseSoilGrids(data).organicCarbon!).toBeCloseTo(15)
   })
   it('uses available requested depths when one model depth is unavailable', () => {
     const data = soilResponse()
@@ -151,7 +151,7 @@ describe('SoilGrids profiles', () => {
     carbon.depths[0].values.mean = 300
     carbon.depths[1].values.mean = null as unknown as number
     carbon.depths[2].values.mean = 100
-    expect(parseSoilGrids(data).organicCarbon).toBeCloseTo(15)
+    expect(parseSoilGrids(data).organicCarbon!).toBeCloseTo(15)
   })
   it('normalizes independently modelled texture fractions', () => {
     const data = soilResponse()
@@ -174,10 +174,15 @@ describe('SoilGrids profiles', () => {
     expect(soil.clay + soil.sand + soil.silt).toBeCloseTo(100)
     expect(soil.clay).toBeCloseTo(25)
   })
-  it('rejects a partial soil profile instead of filling missing properties with zero', () => {
+  it('keeps a core soil profile when an optional property is unavailable', () => {
     const data = soilResponse()
     data.properties.layers.pop()
-    expect(() => parseSoilGrids(data)).toThrow('missing')
+    expect(parseSoilGrids(data).nitrogen).toBeNull()
+  })
+  it('rejects a profile when a core pH or texture property is unavailable', () => {
+    const data = soilResponse()
+    data.properties.layers = data.properties.layers.filter((layer) => layer.name !== 'phh2o')
+    expect(() => parseSoilGrids(data)).toThrow('phh2o')
   })
   it('uses the same-origin proxy before making a direct provider request', async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json(soilResponse()))

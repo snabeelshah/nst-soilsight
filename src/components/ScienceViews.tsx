@@ -53,7 +53,9 @@ export function NASADashboard() {
           )}
         </div>
         {recentLoading ? (
-          <p className="caption" role="status">Loading the latest complete NASA POWER days…</p>
+          <p className="caption" role="status">
+            Loading the latest complete NASA POWER days…
+          </p>
         ) : recent ? (
           <>
             <div className="metrics-grid">
@@ -261,17 +263,19 @@ export function SoilHealthAdvisor() {
         <Metric label="Soil pH" value={soil.ph.toFixed(1)} detail="Estimated · 0–30 cm profile" />
         <Metric
           label="Organic carbon"
-          value={`${soil.organicCarbon.toFixed(1)} g/kg`}
+          value={
+            soil.organicCarbon === null ? 'Unavailable' : `${soil.organicCarbon.toFixed(1)} g/kg`
+          }
           detail="Estimated · concentration, not carbon stock"
         />
         <Metric
           label="Total nitrogen"
-          value={`${soil.nitrogen.toFixed(2)} g/kg`}
+          value={soil.nitrogen === null ? 'Unavailable' : `${soil.nitrogen.toFixed(2)} g/kg`}
           detail="Estimated · not plant-available nitrogen"
         />
         <Metric
           label="Cation exchange capacity"
-          value={`${soil.cec.toFixed(1)}`}
+          value={soil.cec === null ? 'Unavailable' : soil.cec.toFixed(1)}
           detail="Estimated · cmol(c)/kg"
         />
       </div>
@@ -559,7 +563,11 @@ export function Methodology() {
                 ['MODIS via GIBS', 'Regional satellite-image context', 'Map layer; not scored'],
                 ['SMAP', 'Satellite soil moisture since 2015', 'Future validation layer'],
                 ['GPM IMERG', 'Higher-resolution precipitation', 'Future rainfall refinement'],
-                ['Landsat / HLS', 'Field cover and vegetation change', 'Future field-history layer'],
+                [
+                  'Landsat / HLS',
+                  'Field cover and vegetation change',
+                  'Future field-history layer',
+                ],
                 ['ECOSTRESS', 'Plant temperature and water stress', 'Future stress validation'],
                 ['GRACE / GRACE-FO', 'Regional groundwater-storage trends', 'Future water context'],
                 ['SRTM', 'Elevation and slope', 'Future erosion-risk input'],
@@ -623,7 +631,10 @@ export function Methodology() {
             ['NASA GIBS imagery documentation', 'https://nasa-gibs.github.io/gibs-api-docs/'],
             ['NASA SMAP data', 'https://smap.jpl.nasa.gov/data/'],
             ['NASA GPM data', 'https://gpm.nasa.gov/data'],
-            ['NASA Harmonized Landsat Sentinel-2', 'https://www.earthdata.nasa.gov/data/projects/hls'],
+            [
+              'NASA Harmonized Landsat Sentinel-2',
+              'https://www.earthdata.nasa.gov/data/projects/hls',
+            ],
             ['NASA ECOSTRESS', 'https://ecostress.jpl.nasa.gov/'],
             ['NASA GRACE data', 'https://grace.jpl.nasa.gov/data/'],
             ['NASA SRTM', 'https://www.earthdata.nasa.gov/data/instruments/srtm'],
