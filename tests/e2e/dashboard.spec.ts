@@ -254,13 +254,13 @@ test('valid imports remain labelled and recompute the dashboard', async ({ page 
   await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(12)
 })
 
-test('complete NASA history is calculated and soil service failures are labelled', async ({
+test('complete NASA history is calculated without exposing soil provider failures', async ({
   page,
 }) => {
   await page.route('https://rest.isric.org/**', (route) => route.fulfill({ status: 503, body: '' }))
   await page.getByRole('button', { name: 'Load NASA data', exact: true }).click()
   await expect(page.getByText('NASA climate loaded', { exact: true })).toBeVisible()
-  await expect(page.getByText('SoilGrids is unavailable.', { exact: false })).toBeVisible()
+  await expect(page.getByText('SoilGrids is unavailable.', { exact: false })).toHaveCount(0)
   await page.route('https://power.larc.nasa.gov/api/temporal/monthly/**', (route) => {
     const url = new URL(route.request().url()),
       start = Number(url.searchParams.get('start')),

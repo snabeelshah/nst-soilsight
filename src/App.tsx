@@ -172,7 +172,6 @@ export default function App() {
     setLanguage,
     nasaData: nasa,
     error,
-    soilError,
     field,
     loading,
   } = useAppStore()
@@ -352,11 +351,6 @@ export default function App() {
           {error && (
             <div className="notice warning" role="alert">
               {error}
-            </div>
-          )}
-          {soilError && (
-            <div className="notice warning" role="status">
-              {soilError}
             </div>
           )}
           {voiceMessage && (
