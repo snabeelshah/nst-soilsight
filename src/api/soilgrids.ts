@@ -1,6 +1,7 @@
 import type { SoilData } from '../types'
 import fallback from '../data/soil-fallback.json'
 interface SoilResponse {
+  _soilsight?: { provider?: string; sourceUrl?: string }
   properties?: {
     layers?: Array<{
       name: string
@@ -68,12 +69,11 @@ export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData
             ? 'Silt-rich'
             : 'Mixed texture',
     source: 'soilgrids',
-    sourceUrl,
+    sourceUrl: data._soilsight?.sourceUrl ?? sourceUrl,
     confidence: {
       level: 'estimated',
       label: 'Estimated · SoilGrids',
-      description:
-        '250 m global soil predictions; available requested depths are thickness-weighted and texture fractions are normalized. Local soil testing is needed.',
+      description: `250 m global soil predictions${data._soilsight?.provider ? ` delivered by ${data._soilsight.provider}` : ''}; available requested depths are thickness-weighted and texture fractions are normalized. Local soil testing is needed.`,
       color: '#776290',
     },
   }
@@ -84,10 +84,18 @@ export async function fetchSoilData(
   signal?: AbortSignal,
 ): Promise<SoilData> {
   const params = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4), value: 'mean' })
+  const openEpiParams = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4) })
   for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
     params.append('property', p)
-  for (const d of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', d)
+  for (const p of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
+    openEpiParams.append('properties', p)
+  for (const d of ['0-5cm', '5-15cm', '15-30cm']) {
+    params.append('depth', d)
+    openEpiParams.append('depths', d)
+  }
+  openEpiParams.append('values', 'mean')
   const url = `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`
+  const openEpiUrl = `https://api.openepi.io/soil/property?${openEpiParams}`
   const proxyUrl = `/api/soilgrids?lat=${encodeURIComponent(lat.toFixed(4))}&lon=${encodeURIComponent(lon.toFixed(4))}`
   const request = async (requestUrl: string, timeout: number) => {
     const response = await fetch(requestUrl, {
@@ -111,13 +119,21 @@ export async function fetchSoilData(
     return parseSoilGrids(await request(proxyUrl, 28000), url)
   } catch (proxyError) {
     if (signal?.aborted) throw proxyError
-    // Direct access remains a development fallback for browsers/networks where ISRIC allows CORS.
+    // Direct providers remain development fallbacks; production normally succeeds via the proxy.
     try {
       return parseSoilGrids(await request(url, 12000), url)
-    } catch (directError) {
-      const explain = (error: unknown) =>
-        error instanceof Error ? error.message : 'unknown request failure'
-      throw new Error(`Proxy: ${explain(proxyError)} Direct provider: ${explain(directError)}`)
+    } catch (isricError) {
+      try {
+        const data = (await request(openEpiUrl, 16000)) as SoilResponse
+        data._soilsight = { provider: 'SoilGrids via OpenEPI', sourceUrl: openEpiUrl }
+        return parseSoilGrids(data, openEpiUrl)
+      } catch (openEpiError) {
+        const explain = (error: unknown) =>
+          error instanceof Error ? error.message : 'unknown request failure'
+        throw new Error(
+          `Proxy: ${explain(proxyError)} Direct ISRIC: ${explain(isricError)} OpenEPI: ${explain(openEpiError)}`,
+        )
+      }
     }
   }
 }

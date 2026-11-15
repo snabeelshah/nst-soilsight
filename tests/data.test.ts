@@ -196,6 +196,26 @@ describe('SoilGrids profiles', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[1][0]).toContain('https://rest.isric.org/')
   })
+  it('uses the SoilGrids-backed OpenEPI route when ISRIC is unavailable', async () => {
+    const openEpiResponse = {
+      ...soilResponse(),
+      _soilsight: {
+        provider: 'SoilGrids via OpenEPI',
+        sourceUrl: 'https://api.openepi.io/soil/property',
+      },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 502 }))
+      .mockResolvedValueOnce(new Response('', { status: 504 }))
+      .mockResolvedValueOnce(Response.json(openEpiResponse))
+    vi.stubGlobal('fetch', fetchMock)
+    const soil = await fetchSoilData(30, 71)
+    expect(soil).toMatchObject({ source: 'soilgrids' })
+    expect(soil.sourceUrl).toContain('api.openepi.io')
+    expect(soil.confidence.description).toContain('OpenEPI')
+    expect(fetchMock.mock.calls[2][0]).toContain('https://api.openepi.io/soil/property')
+  })
 })
 describe('climate imports', () => {
   const demo = () => generateFallback(30, 71)
