@@ -57,11 +57,10 @@ const server = createServer(async (request, response) => {
       return
     }
     const params = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4), value: 'mean' })
-    for (const property of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
-      params.append('property', property)
+    for (const property of ['phh2o', 'clay', 'sand', 'silt']) params.append('property', property)
     for (const depth of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', depth)
     try {
-      const properties = ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen']
+      const properties = ['phh2o', 'clay', 'sand', 'silt']
       const depths = ['0-5cm', '5-15cm', '15-30cm']
       const openEpiParams = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4) })
       properties.forEach((property) => openEpiParams.append('properties', property))

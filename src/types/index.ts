@@ -58,12 +58,12 @@ export interface NASARecentData {
 }
 export interface SoilData {
   ph: number
-  organicCarbon: number
+  organicCarbon: number | null
   clay: number
   sand: number
   silt: number
-  cec: number
-  nitrogen: number
+  cec: number | null
+  nitrogen: number | null
   confidence: DataConfidence
   source: 'soilgrids' | 'fallback'
   textureClass: string

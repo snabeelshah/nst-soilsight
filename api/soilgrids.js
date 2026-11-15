@@ -52,9 +52,8 @@ export default async function handler(request, response) {
 
   const params = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4), value: 'mean' })
   const openEpiParams = new URLSearchParams({ lat: lat.toFixed(4), lon: lon.toFixed(4) })
-  for (const property of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
-    params.append('property', property)
-  for (const property of ['phh2o', 'soc', 'clay', 'sand', 'silt', 'cec', 'nitrogen'])
+  for (const property of ['phh2o', 'clay', 'sand', 'silt']) params.append('property', property)
+  for (const property of ['phh2o', 'clay', 'sand', 'silt'])
     openEpiParams.append('properties', property)
   for (const depth of ['0-5cm', '5-15cm', '15-30cm']) {
     params.append('depth', depth)
