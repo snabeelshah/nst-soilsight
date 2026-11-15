@@ -13,31 +13,46 @@ export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData
   const layers = data.properties?.layers
   const get = (name: string, divisor: number) => {
     const layer = layers?.find((l) => l.name === name)
+    if (!layer) throw new Error(`SoilGrids ${name} property is missing.`)
     const depths = [
       { label: '0-5cm', weight: 5 },
       { label: '5-15cm', weight: 10 },
       { label: '15-30cm', weight: 15 },
     ]
-    return depths.reduce((sum, d) => {
+    const factor = layer.unit_measure?.d_factor ?? divisor
+    if (!Number.isFinite(factor) || factor <= 0)
+      throw new Error(`SoilGrids ${name} unit conversion is invalid.`)
+    const available = depths.flatMap((d) => {
       const value = layer?.depths.find((x) => x.label === d.label)?.values.mean
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
-        throw new Error(`SoilGrids ${name} data missing for ${d.label}.`)
-      return sum + ((value / (layer?.unit_measure?.d_factor || divisor)) * d.weight) / 30
-    }, 0)
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return []
+      return [{ value: value / factor, weight: d.weight }]
+    })
+    if (!available.length) throw new Error(`SoilGrids ${name} has no usable depth values.`)
+    const coveredDepth = available.reduce((sum, sample) => sum + sample.weight, 0)
+    return available.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / coveredDepth
   }
   const ph = get('phh2o', 10),
     organicCarbon = get('soc', 10),
-    clay = get('clay', 10),
-    sand = get('sand', 10),
-    silt = get('silt', 10)
-  // Texture means are g/kg in the API; division by 10 gives percent.
-  const texture = { clay, sand, silt }
+    rawTexture = {
+      clay: get('clay', 10),
+      sand: get('sand', 10),
+      silt: get('silt', 10),
+    },
+    textureTotal = rawTexture.clay + rawTexture.sand + rawTexture.silt
+  // SoilGrids models the fractions independently, so normalize valid component predictions to 100%.
   if (
+    ph < 0 ||
     ph > 14 ||
-    Object.values(texture).some((x) => x > 100) ||
-    Math.abs(texture.clay + texture.sand + texture.silt - 100) > 5
+    Object.values(rawTexture).some((x) => x < 0 || x > 100) ||
+    textureTotal < 50 ||
+    textureTotal > 150
   )
     throw new Error('Invalid SoilGrids soil profile.')
+  const texture = {
+    clay: (rawTexture.clay / textureTotal) * 100,
+    sand: (rawTexture.sand / textureTotal) * 100,
+    silt: (rawTexture.silt / textureTotal) * 100,
+  }
   return {
     ph,
     organicCarbon,
@@ -58,7 +73,7 @@ export function parseSoilGrids(data: SoilResponse, sourceUrl?: string): SoilData
       level: 'estimated',
       label: 'Estimated · SoilGrids',
       description:
-        '250 m global soil predictions; thickness-weighted 0–30 cm means. Local soil testing is needed.',
+        '250 m global soil predictions; available requested depths are thickness-weighted and texture fractions are normalized. Local soil testing is needed.',
       color: '#776290',
     },
   }
@@ -80,7 +95,14 @@ export async function fetchSoilData(
         ? AbortSignal.any([signal, AbortSignal.timeout(timeout)])
         : AbortSignal.timeout(timeout),
     })
-    if (!response.ok) throw new Error(`SoilGrids returned HTTP ${response.status}.`)
+    if (!response.ok) {
+      const body = (await response
+        .clone()
+        .json()
+        .catch(() => null)) as { error?: string; detail?: string } | null
+      const detail = body?.detail ?? body?.error
+      throw new Error(`SoilGrids returned HTTP ${response.status}${detail ? `: ${detail}` : ''}.`)
+    }
     return response.json()
   }
   try {
@@ -90,7 +112,13 @@ export async function fetchSoilData(
   } catch (proxyError) {
     if (signal?.aborted) throw proxyError
     // Direct access remains a development fallback for browsers/networks where ISRIC allows CORS.
-    return parseSoilGrids(await request(url, 12000), url)
+    try {
+      return parseSoilGrids(await request(url, 12000), url)
+    } catch (directError) {
+      const explain = (error: unknown) =>
+        error instanceof Error ? error.message : 'unknown request failure'
+      throw new Error(`Proxy: ${explain(proxyError)} Direct provider: ${explain(directError)}`)
+    }
   }
 }
 export function getFallbackSoil(): SoilData {
