@@ -5,6 +5,37 @@ function sendJson(response, status, body) {
   return response.status(status).json(body)
 }
 
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+async function requestSoilGrids(url) {
+  let lastError
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const upstream = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'SoilSight/1.0 (NASA Space Apps farm-planning prototype)',
+        },
+        signal: AbortSignal.timeout(12000),
+      })
+      if (!upstream.ok) {
+        const error = new Error(`HTTP ${upstream.status}`)
+        if (upstream.status < 500 && upstream.status !== 429) throw error
+        lastError = error
+      } else {
+        const data = await upstream.json()
+        if (!Array.isArray(data?.properties?.layers))
+          throw new Error('SoilGrids returned an incomplete response.')
+        return data
+      }
+    } catch (error) {
+      lastError = error
+    }
+    if (attempt === 1) await wait(350)
+  }
+  throw lastError ?? new Error('SoilGrids request failed.')
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed.' })
 
@@ -30,12 +61,10 @@ export default async function handler(request, response) {
   for (const depth of ['0-5cm', '5-15cm', '15-30cm']) params.append('depth', depth)
 
   try {
-    const upstream = await fetch(
+    const data = await requestSoilGrids(
       `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`,
-      { signal: AbortSignal.timeout(8000) },
     )
-    if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)
-    return sendJson(response, 200, await upstream.json())
+    return sendJson(response, 200, data)
   } catch (error) {
     console.error('SoilGrids proxy request failed:', error instanceof Error ? error.message : error)
     return sendJson(response, 502, { error: 'SoilGrids is currently unavailable.' })

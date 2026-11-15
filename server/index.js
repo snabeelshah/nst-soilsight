@@ -63,7 +63,13 @@ const server = createServer(async (request, response) => {
     try {
       const upstream = await fetch(
         `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`,
-        { signal: AbortSignal.timeout(8000) },
+        {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'SoilSight/1.0 (NASA Space Apps farm-planning prototype)',
+          },
+          signal: AbortSignal.timeout(20000),
+        },
       )
       if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)
       sendJson(response, 200, await upstream.json())
