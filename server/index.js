@@ -68,18 +68,22 @@ const server = createServer(async (request, response) => {
       depths.forEach((depth) => openEpiParams.append('depths', depth))
       openEpiParams.append('values', 'mean')
       const providers = [
-        ['ISRIC SoilGrids', `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`],
-        ['SoilGrids via OpenEPI', `https://api.openepi.io/soil/property?${openEpiParams}`],
+        [
+          'ISRIC SoilGrids',
+          `https://rest.isric.org/soilgrids/v2.0/properties/query?${params}`,
+          8000,
+        ],
+        ['SoilGrids via OpenEPI', `https://api.openepi.io/soil/property?${openEpiParams}`, 20000],
       ]
       const failures = []
-      for (const [provider, providerUrl] of providers) {
+      for (const [provider, providerUrl, timeout] of providers) {
         try {
           const upstream = await fetch(providerUrl, {
             headers: {
               Accept: 'application/json',
               'User-Agent': 'SoilSight/1.0 (NASA Space Apps farm-planning prototype)',
             },
-            signal: AbortSignal.timeout(20000),
+            signal: AbortSignal.timeout(timeout),
           })
           if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)
           const data = await upstream.json()

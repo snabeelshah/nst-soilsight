@@ -116,12 +116,12 @@ export async function fetchSoilData(
   try {
     // ISRIC can need several seconds to assemble seven properties at three depths.
     // Prefer the same-origin serverless proxy so browser CORS never determines availability.
-    return parseSoilGrids(await request(proxyUrl, 28000), url)
+    return parseSoilGrids(await request(proxyUrl, 35000), url)
   } catch (proxyError) {
     if (signal?.aborted) throw proxyError
     // Direct providers remain development fallbacks; production normally succeeds via the proxy.
     try {
-      return parseSoilGrids(await request(url, 12000), url)
+      return parseSoilGrids(await request(url, 8000), url)
     } catch (isricError) {
       try {
         const data = (await request(openEpiUrl, 16000)) as SoilResponse

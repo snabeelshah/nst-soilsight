@@ -8,9 +8,9 @@ function sendJson(response, status, body, provider) {
 
 async function requestSoilProfile(isricUrl, openEpiUrl) {
   const failures = []
-  for (const [provider, url] of [
-    ['ISRIC SoilGrids', isricUrl],
-    ['SoilGrids via OpenEPI', openEpiUrl],
+  for (const [provider, url, timeout] of [
+    ['ISRIC SoilGrids', isricUrl, 8000],
+    ['SoilGrids via OpenEPI', openEpiUrl, 20000],
   ]) {
     try {
       const upstream = await fetch(url, {
@@ -18,7 +18,7 @@ async function requestSoilProfile(isricUrl, openEpiUrl) {
           Accept: 'application/json',
           'User-Agent': 'SoilSight/1.0 (NASA Space Apps farm-planning prototype)',
         },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(timeout),
       })
       if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`)
       const data = await upstream.json()
